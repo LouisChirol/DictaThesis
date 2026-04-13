@@ -1,219 +1,254 @@
 """
-Floating always-on-top HUD window (tkinter).
+Floating always-on-top HUD window (PySide6).
 
 Shows dictation pipeline state in real time:
   - Each chunk appears as a row: draft (yellow) → final (green) → settled (grey)
   - A status bar shows current recording state
   - A Stop button lets the user end the session with one click
 
-Must be run in its own thread. All updates from other threads go via
-root.after(0, fn) which is tkinter's thread-safe update mechanism.
+All public methods are thread-safe via Qt signals.
 """
 
 from __future__ import annotations
 
-import threading
-import tkinter as tk
 from collections.abc import Callable
 
+from PySide6.QtCore import QPoint, Qt, QTimer, Signal
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
-class HUD:
-    # Colour palette
-    BG = "#1a1a2e"
-    BAR_BG = "#16213e"
-    TEXT_FG = "#e0e0e0"
-    DRAFT_FG = "#ffd166"
-    DRAFT_BG = "#3a2a00"
-    FINAL_FG = "#06d6a0"
-    FINAL_BG = "#003322"
-    SETTLED_FG = "#666677"
-    STOP_BG = "#e63946"
-    STOP_HOVER = "#c1121f"
+# Colour palette
+_BG = "#1a1a2e"
+_BAR_BG = "#16213e"
+_TEXT_FG = "#e0e0e0"
+_DRAFT_FG = "#ffd166"
+_DRAFT_BG = "#3a2a00"
+_FINAL_FG = "#06d6a0"
+_FINAL_BG = "#003322"
+_SETTLED_FG = "#666677"
+_STOP_BG = "#e63946"
+_STOP_HOVER = "#c1121f"
+
+_QSS = f"""
+QWidget#hud_root {{
+    background: {_BG};
+}}
+QFrame#header {{
+    background: {_BAR_BG};
+    border: none;
+}}
+QLabel#status_label {{
+    color: {_TEXT_FG};
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 11pt;
+    font-weight: bold;
+    padding-left: 10px;
+    background: transparent;
+}}
+QPushButton#stop_btn {{
+    background: {_STOP_BG};
+    color: white;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 10pt;
+    font-weight: bold;
+    border: none;
+    padding: 3px 12px;
+    border-radius: 3px;
+}}
+QPushButton#stop_btn:hover {{
+    background: {_STOP_HOVER};
+}}
+QTextEdit#chunk_view {{
+    background: #0f0f1a;
+    color: {_TEXT_FG};
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 12pt;
+    border: none;
+    padding: 6px 8px;
+}}
+QScrollBar:vertical {{
+    background: {_BG};
+    width: 8px;
+    border: none;
+}}
+QScrollBar::handle:vertical {{
+    background: #313244;
+    border-radius: 4px;
+    min-height: 20px;
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0;
+}}
+"""
+
+
+class HUD(QWidget):
+    # Signals — emitting from any thread is safe; slots run on main thread
+    status_changed = Signal(str)
+    chunk_added = Signal(str, str)      # chunk_id, draft_text
+    chunk_finalized = Signal(str, str)  # chunk_id, final_text
+    clear_requested = Signal()
 
     def __init__(self, on_stop: Callable[[], None] | None = None):
+        super().__init__(
+            None,
+            Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool,
+        )
         self._on_stop = on_stop
-        self._root: tk.Tk | None = None
-        self._text: tk.Text | None = None
-        self._status_var: tk.StringVar | None = None
-        self._ready = threading.Event()
-        self._chunk_tags: dict[str, tuple[str, str]] = {}  # chunk_id → (start, end)
+        self._drag_pos = QPoint()
+        self._chunks: dict[str, dict] = {}  # chunk_id → {text, state}
+
+        self.setObjectName("hud_root")
+        self.setWindowOpacity(0.93)
+        self.setGeometry(60, 60, 440, 230)
+        self.setMinimumSize(300, 150)
+        self.setStyleSheet(_QSS)
+
+        self._build_ui()
+        self._connect_signals()
 
     # ------------------------------------------------------------------
-    # Lifecycle
+    # UI construction
     # ------------------------------------------------------------------
 
-    def run(self):
-        """
-        Build and run the HUD.  Call this in a dedicated thread.
-        Blocks until the window is destroyed.
-        """
-        root = tk.Tk()
-        self._root = root
+    def _build_ui(self):
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
 
-        root.title("DictaThesis")
-        root.configure(bg=self.BG)
-        root.attributes("-topmost", True)
-        root.attributes("-alpha", 0.93)
-        root.geometry("440x230+60+60")
-        root.resizable(True, True)
-        root.minsize(300, 150)
+        # --- Header bar ---
+        header = QFrame(self)
+        header.setObjectName("header")
+        header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 4, 8, 4)
+        header_layout.setSpacing(0)
 
-        # Allow dragging the window by its header bar
-        self._drag_x = 0
-        self._drag_y = 0
+        self._status_label = QLabel("DictaThesis  ·  F9 to start", header)
+        self._status_label.setObjectName("status_label")
+        self._status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        header_layout.addWidget(self._status_label)
 
-        # --- Top bar ---
-        bar = tk.Frame(root, bg=self.BAR_BG, pady=4)
-        bar.pack(fill="x")
-        bar.bind("<ButtonPress-1>", self._drag_start)
-        bar.bind("<B1-Motion>", self._drag_motion)
+        stop_btn = QPushButton("⏹  Stop", header)
+        stop_btn.setObjectName("stop_btn")
+        stop_btn.setCursor(Qt.PointingHandCursor)
+        stop_btn.clicked.connect(self._handle_stop)
+        header_layout.addWidget(stop_btn)
 
-        self._status_var = tk.StringVar(value="DictaThesis  ·  F9 to start")
-        status_lbl = tk.Label(
-            bar,
-            textvariable=self._status_var,
-            bg=self.BAR_BG,
-            fg=self.TEXT_FG,
-            font=("Helvetica", 11, "bold"),
-            anchor="w",
-            padx=10,
-        )
-        status_lbl.pack(side="left", fill="x", expand=True)
-        status_lbl.bind("<ButtonPress-1>", self._drag_start)
-        status_lbl.bind("<B1-Motion>", self._drag_motion)
+        root_layout.addWidget(header)
 
-        stop_btn = tk.Button(
-            bar,
-            text="⏹  Stop",
-            bg=self.STOP_BG,
-            fg="white",
-            activebackground=self.STOP_HOVER,
-            activeforeground="white",
-            font=("Helvetica", 10, "bold"),
-            relief="flat",
-            padx=12,
-            pady=2,
-            cursor="hand2",
-            command=self._handle_stop,
-        )
-        stop_btn.pack(side="right", padx=8, pady=2)
+        # --- Text area ---
+        self._text = QTextEdit(self)
+        self._text.setObjectName("chunk_view")
+        self._text.setReadOnly(True)
+        self._text.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._text.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        root_layout.addWidget(self._text)
 
-        # --- Scrollable text area ---
-        text_frame = tk.Frame(root, bg=self.BG)
-        text_frame.pack(fill="both", expand=True, padx=6, pady=(4, 6))
+        # Enable drag on header and status label
+        header.mousePressEvent = self._drag_start
+        header.mouseMoveEvent = self._drag_move
+        self._status_label.mousePressEvent = self._drag_start
+        self._status_label.mouseMoveEvent = self._drag_move
 
-        scroll = tk.Scrollbar(text_frame, orient="vertical")
-        self._text = tk.Text(
-            text_frame,
-            bg="#0f0f1a",
-            fg=self.TEXT_FG,
-            font=("Helvetica", 12),
-            wrap="word",
-            state="disabled",
-            relief="flat",
-            yscrollcommand=scroll.set,
-            padx=8,
-            pady=6,
-            cursor="arrow",
-            selectbackground="#333355",
-        )
-        scroll.config(command=self._text.yview)
-        scroll.pack(side="right", fill="y")
-        self._text.pack(side="left", fill="both", expand=True)
-
-        # Configure text tags
-        self._text.tag_configure("draft", foreground=self.DRAFT_FG, background=self.DRAFT_BG)
-        self._text.tag_configure("final", foreground=self.FINAL_FG, background=self.FINAL_BG)
-        self._text.tag_configure("settled", foreground=self.SETTLED_FG, background=self.BG)
-        self._text.tag_configure("label", foreground="#555566")
-
-        self._ready.set()
-        root.mainloop()
-
-    def wait_ready(self, timeout: float = 5.0):
-        self._ready.wait(timeout)
+    def _connect_signals(self):
+        self.status_changed.connect(self._set_status)
+        self.chunk_added.connect(self._add_chunk)
+        self.chunk_finalized.connect(self._finalize_chunk)
+        self.clear_requested.connect(self._clear)
 
     # ------------------------------------------------------------------
-    # Thread-safe public API (safe to call from any thread)
+    # Thread-safe public API
     # ------------------------------------------------------------------
 
     def set_status(self, text: str):
-        self._schedule(lambda: self._status_var.set(text))  # type: ignore[arg-type]
+        self.status_changed.emit(text)
 
     def add_chunk(self, chunk_id: str, draft_text: str):
-        self._schedule(lambda cid=chunk_id, t=draft_text: self._add_chunk(cid, t))
+        self.chunk_added.emit(chunk_id, draft_text)
 
     def finalize_chunk(self, chunk_id: str, final_text: str):
-        self._schedule(lambda cid=chunk_id, t=final_text: self._finalize_chunk(cid, t))
+        self.chunk_finalized.emit(chunk_id, final_text)
 
     def clear(self):
-        self._schedule(self._clear)
+        self.clear_requested.emit()
+
+    def wait_ready(self, timeout: float = 5.0):
+        """No-op — QWidget is ready as soon as show() returns."""
 
     # ------------------------------------------------------------------
-    # Internal (always called from main/tkinter thread via root.after)
+    # Slots (always run on main thread)
     # ------------------------------------------------------------------
 
-    def _schedule(self, fn):
-        if self._root:
-            self._root.after(0, fn)
+    def _set_status(self, text: str):
+        self._status_label.setText(text)
 
     def _add_chunk(self, chunk_id: str, draft_text: str):
-        w = self._text
-        w.config(state="normal")
-        start = w.index("end-1c")
-        w.insert("end", f"[{chunk_id}] ", ("label",))
-        w.insert("end", draft_text + "\n", ("draft", chunk_id))
-        end = w.index("end-1c")
-        w.tag_add(chunk_id, start, end)
-        w.config(state="disabled")
-        w.see("end")
-        self._chunk_tags[chunk_id] = (start, end)
+        self._chunks[chunk_id] = {"text": draft_text, "state": "draft"}
+        self._rebuild_html()
+        self._scroll_to_bottom()
 
     def _finalize_chunk(self, chunk_id: str, final_text: str):
-        w = self._text
-        if chunk_id not in self._chunk_tags:
+        if chunk_id not in self._chunks:
             return
-        try:
-            ranges = w.tag_ranges(chunk_id)
-            if not ranges:
-                return
-            start, end = str(ranges[0]), str(ranges[1])
-            w.config(state="normal")
-            w.delete(start, end)
-            w.insert(start, f"[{chunk_id}] ", ("label",))
-            w.insert(f"{start} + {len(chunk_id) + 3}c", final_text + "\n", ("final", chunk_id))
-            # Re-tag the whole range
-            new_end = w.index(f"{start} lineend +1c")
-            w.tag_remove(chunk_id, "1.0", "end")
-            w.tag_add(chunk_id, start, new_end)
-            w.config(state="disabled")
-            w.see("end")
-            # Fade to settled after 3 s
-            self._root.after(3000, lambda cid=chunk_id: self._settle_chunk(cid))
-        except Exception as e:
-            print(f"[hud] finalize error: {e}")
+        self._chunks[chunk_id] = {"text": final_text, "state": "final"}
+        self._rebuild_html()
+        self._scroll_to_bottom()
+        QTimer.singleShot(3000, lambda cid=chunk_id: self._settle_chunk(cid))
 
     def _settle_chunk(self, chunk_id: str):
-        w = self._text
-        try:
-            ranges = w.tag_ranges(chunk_id)
-            if not ranges:
-                return
-            start, end = str(ranges[0]), str(ranges[1])
-            w.config(state="normal")
-            w.tag_remove("draft", start, end)
-            w.tag_remove("final", start, end)
-            w.tag_add("settled", start, end)
-            w.config(state="disabled")
-        except Exception:
-            pass
+        if chunk_id not in self._chunks:
+            return
+        self._chunks[chunk_id]["state"] = "settled"
+        self._rebuild_html()
 
     def _clear(self):
-        w = self._text
-        w.config(state="normal")
-        w.delete("1.0", "end")
-        w.config(state="disabled")
-        self._chunk_tags.clear()
+        self._chunks.clear()
+        self._text.setHtml("")
+
+    # ------------------------------------------------------------------
+    # HTML rendering
+    # ------------------------------------------------------------------
+
+    def _rebuild_html(self):
+        parts = ["<html><body style='margin:0;padding:0;'>"]
+        for cid, chunk in self._chunks.items():
+            state = chunk["state"]
+            text = (
+                chunk["text"]
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+            if state == "draft":
+                fg, bg = _DRAFT_FG, _DRAFT_BG
+            elif state == "final":
+                fg, bg = _FINAL_FG, _FINAL_BG
+            else:
+                fg, bg = _SETTLED_FG, _BG
+            parts.append(
+                f'<p style="margin:2px 0;padding:2px 4px;background:{bg};color:{fg};">'
+                f'<span style="color:#555566;font-size:9pt;">[{cid}]</span> {text}'
+                f"</p>"
+            )
+        parts.append("</body></html>")
+        self._text.setHtml("".join(parts))
+
+    def _scroll_to_bottom(self):
+        sb = self._text.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    # ------------------------------------------------------------------
+    # Stop button
+    # ------------------------------------------------------------------
 
     def _handle_stop(self):
         if self._on_stop:
@@ -224,16 +259,9 @@ class HUD:
     # ------------------------------------------------------------------
 
     def _drag_start(self, event):
-        self._drag_x = event.x_root
-        self._drag_y = event.y_root
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
 
-    def _drag_motion(self, event):
-        if not self._root:
-            return
-        dx = event.x_root - self._drag_x
-        dy = event.y_root - self._drag_y
-        x = self._root.winfo_x() + dx
-        y = self._root.winfo_y() + dy
-        self._root.geometry(f"+{x}+{y}")
-        self._drag_x = event.x_root
-        self._drag_y = event.y_root
+    def _drag_move(self, event):
+        if event.buttons() & Qt.LeftButton and not self._drag_pos.isNull():
+            self.move(event.globalPosition().toPoint() - self._drag_pos)

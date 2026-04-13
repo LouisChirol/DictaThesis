@@ -1,275 +1,297 @@
 """
-Settings window — opens in its own thread.
-Uses tkinter directly (no customtkinter dependency) for portability.
+Settings dialog (PySide6 QDialog).
+Opens non-blocking on the main thread — no separate thread needed.
 """
 
 from __future__ import annotations
 
-import threading
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QObject,
+    QPlainTextEdit,
+    QPushButton,
+    QRadioButton,
+    QScrollArea,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
+
+# Colour palette (matches HUD)
+_BG = "#1e1e2e"
+_FG = "#cdd6f4"
+_ENTRY_BG = "#313244"
+_ACCENT = "#89b4fa"
+_BTN_BG = "#45475a"
+_BTN_HOVER = "#585b70"
+_HEADER_BG = "#181825"
+
+_QSS = f"""
+QDialog, QWidget {{
+    background: {_BG};
+    color: {_FG};
+}}
+QLabel {{
+    color: {_FG};
+    background: transparent;
+}}
+QLabel#section_title {{
+    color: {_ACCENT};
+    font-weight: bold;
+    font-size: 11pt;
+    padding-top: 12px;
+}}
+QLineEdit, QPlainTextEdit {{
+    background: {_ENTRY_BG};
+    color: {_FG};
+    border: none;
+    border-radius: 3px;
+    padding: 4px 6px;
+    font-family: monospace;
+    font-size: 11pt;
+}}
+QRadioButton {{
+    color: {_FG};
+    font-size: 11pt;
+    spacing: 6px;
+}}
+QRadioButton::indicator {{
+    width: 14px;
+    height: 14px;
+}}
+QSlider::groove:horizontal {{
+    background: {_ENTRY_BG};
+    height: 6px;
+    border-radius: 3px;
+}}
+QSlider::handle:horizontal {{
+    background: {_ACCENT};
+    width: 14px;
+    height: 14px;
+    margin: -4px 0;
+    border-radius: 7px;
+}}
+QPushButton {{
+    background: {_BTN_BG};
+    color: {_FG};
+    border: none;
+    border-radius: 3px;
+    padding: 5px 14px;
+    font-size: 11pt;
+}}
+QPushButton:hover {{
+    background: {_BTN_HOVER};
+}}
+QPushButton#save_btn {{
+    background: {_ACCENT};
+    color: #1e1e2e;
+    font-weight: bold;
+    font-size: 12pt;
+    padding: 8px 24px;
+}}
+QPushButton#save_btn:hover {{
+    background: #74c7ec;
+}}
+QScrollArea {{
+    border: none;
+}}
+"""
 
 
-class SettingsWindow:
-    BG = "#1e1e2e"
-    FG = "#cdd6f4"
-    ENTRY_BG = "#313244"
-    ACCENT = "#89b4fa"
-    BTN_BG = "#45475a"
-    BTN_HOVER = "#585b70"
-    HEADER_BG = "#181825"
+class SettingsWindow(QObject):
+    """Wraps a lazily-created QDialog. Call open() from the main thread."""
 
     def __init__(self, settings):
+        super().__init__()
         self._settings = settings
-        self._root: tk.Tk | None = None
-        self._lock = threading.Lock()
+        self._dialog: _SettingsDialog | None = None
 
     def open(self):
-        """Open the settings window. If already open, bring it to front."""
-        with self._lock:
-            if self._root and self._root.winfo_exists():
-                self._root.lift()
-                self._root.focus_force()
-                return
-        t = threading.Thread(target=self._run, daemon=True)
-        t.start()
+        """Open the settings dialog. If already open, bring it to the front."""
+        if self._dialog and self._dialog.isVisible():
+            self._dialog.raise_()
+            self._dialog.activateWindow()
+            return
+        self._dialog = _SettingsDialog(self._settings)
+        self._dialog.show()
 
-    def _run(self):
-        root = tk.Tk()
-        self._root = root
-        root.title("DictaThesis — Settings")
-        root.configure(bg=self.BG)
-        root.geometry("560x620")
-        root.resizable(False, True)
-        root.minsize(480, 500)
 
-        self._build_ui(root)
-        root.mainloop()
+class _SettingsDialog(QDialog):
+    def __init__(self, settings):
+        super().__init__(None, Qt.Window)
+        self._settings = settings
+        self.setWindowTitle("DictaThesis — Settings")
+        self.setStyleSheet(_QSS)
+        self.setMinimumWidth(520)
+        self.resize(560, 620)
+        self._build_ui()
 
-    def _build_ui(self, root: tk.Tk):
-        s = ttk.Style()
-        s.theme_use("default")
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
 
-        # Scrollable canvas
-        canvas = tk.Canvas(root, bg=self.BG, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
+    def _build_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        frame = tk.Frame(canvas, bg=self.BG)
-        frame_id = canvas.create_window((0, 0), window=frame, anchor="nw")
+        # Header
+        header_label = QLabel("DictaThesis  ·  Settings")
+        header_label.setAlignment(Qt.AlignCenter)
+        header_label.setStyleSheet(
+            f"background:{_HEADER_BG};color:{_ACCENT};"
+            "font-size:15pt;font-weight:bold;padding:14px;"
+        )
+        outer.addWidget(header_label)
 
-        def _resize(event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-            canvas.itemconfig(frame_id, width=event.width)
-
-        frame.bind("<Configure>", _resize)
-        canvas.bind("<Configure>", lambda e: canvas.itemconfig(frame_id, width=e.width))
-
-        pad = {"padx": 18, "pady": 6}
-
-        # --- Header ---
-        hdr = tk.Frame(frame, bg=self.HEADER_BG)
-        hdr.pack(fill="x")
-        tk.Label(
-            hdr,
-            text="DictaThesis  ·  Settings",
-            bg=self.HEADER_BG,
-            fg=self.ACCENT,
-            font=("Helvetica", 15, "bold"),
-            pady=14,
-        ).pack()
+        # Scrollable content
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(18, 0, 18, 18)
+        layout.setSpacing(4)
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
 
         # --- API Key ---
-        self._section(frame, "Mistral API Key")
-        self._api_key_var = tk.StringVar(value=self._settings.get("api_key"))
-        api_row = tk.Frame(frame, bg=self.BG)
-        api_row.pack(fill="x", **pad)
-        api_entry = tk.Entry(
-            api_row,
-            textvariable=self._api_key_var,
-            show="•",
-            bg=self.ENTRY_BG,
-            fg=self.FG,
-            insertbackground=self.FG,
-            relief="flat",
-            font=("Courier", 11),
-            width=38,
-        )
-        api_entry.pack(side="left", ipady=4, padx=(0, 8))
-        tk.Button(
-            api_row,
-            text="Show",
-            bg=self.BTN_BG,
-            fg=self.FG,
-            relief="flat",
-            command=lambda: api_entry.config(show="" if api_entry.cget("show") == "•" else "•"),
-        ).pack(side="left")
+        self._add_section(layout, "Mistral API Key")
+        api_row = QHBoxLayout()
+        self._api_key_edit = QLineEdit(self._settings.get("api_key") or "")
+        self._api_key_edit.setEchoMode(QLineEdit.Password)
+        self._api_key_edit.setPlaceholderText("sk-...")
+        show_btn = QPushButton("Show")
+        show_btn.setFixedWidth(60)
+        show_btn.clicked.connect(self._toggle_api_visibility)
+        api_row.addWidget(self._api_key_edit)
+        api_row.addWidget(show_btn)
+        layout.addLayout(api_row)
 
         # --- Language ---
-        self._section(frame, "Language")
-        self._lang_var = tk.StringVar(value=self._settings.get("language"))
-        lang_frame = tk.Frame(frame, bg=self.BG)
-        lang_frame.pack(fill="x", **pad)
+        self._add_section(layout, "Language")
+        lang_row = QHBoxLayout()
+        lang = self._settings.get("language") or "fr"
+        self._lang_buttons: dict[str, QRadioButton] = {}
         for val, lbl in [("fr", "Français"), ("en", "English"), ("auto", "Auto-detect")]:
-            tk.Radiobutton(
-                lang_frame,
-                text=lbl,
-                variable=self._lang_var,
-                value=val,
-                bg=self.BG,
-                fg=self.FG,
-                selectcolor=self.ENTRY_BG,
-                activebackground=self.BG,
-                activeforeground=self.ACCENT,
-                font=("Helvetica", 11),
-            ).pack(side="left", padx=8)
+            rb = QRadioButton(lbl)
+            rb.setChecked(lang == val)
+            lang_row.addWidget(rb)
+            self._lang_buttons[val] = rb
+        lang_row.addStretch()
+        layout.addLayout(lang_row)
 
-        # --- Shortcut ---
-        self._section(frame, "Global Shortcut Key")
-        self._shortcut_var = tk.StringVar(value=self._settings.get("shortcut_key"))
-        shortcut_frame = tk.Frame(frame, bg=self.BG)
-        shortcut_frame.pack(fill="x", **pad)
-        tk.Entry(
-            shortcut_frame,
-            textvariable=self._shortcut_var,
-            bg=self.ENTRY_BG,
-            fg=self.FG,
-            insertbackground=self.FG,
-            relief="flat",
-            font=("Courier", 11),
-            width=16,
-        ).pack(side="left", ipady=4, padx=(0, 8))
-        tk.Label(
-            shortcut_frame,
-            text="(e.g. f9, f8, scroll_lock)",
-            bg=self.BG,
-            fg="#888899",
-            font=("Helvetica", 10),
-        ).pack(side="left")
+        # --- Shortcut Key ---
+        self._add_section(layout, "Global Shortcut Key")
+        shortcut_row = QHBoxLayout()
+        self._shortcut_edit = QLineEdit(self._settings.get("shortcut_key") or "f9")
+        self._shortcut_edit.setFixedWidth(160)
+        hint = QLabel("(e.g. f9, f8, scroll_lock)")
+        hint.setStyleSheet("color:#888899;font-size:10pt;")
+        shortcut_row.addWidget(self._shortcut_edit)
+        shortcut_row.addWidget(hint)
+        shortcut_row.addStretch()
+        layout.addLayout(shortcut_row)
 
         # --- VAD Silence Duration ---
-        self._section(frame, "Silence Duration Before Chunk (seconds)")
-        self._vad_var = tk.DoubleVar(value=self._settings.get("vad_silence_duration"))
-        vad_frame = tk.Frame(frame, bg=self.BG)
-        vad_frame.pack(fill="x", **pad)
-        tk.Scale(
-            vad_frame,
-            variable=self._vad_var,
-            from_=0.5,
-            to=4.0,
-            resolution=0.1,
-            orient="horizontal",
-            length=300,
-            bg=self.BG,
-            fg=self.FG,
-            troughcolor=self.ENTRY_BG,
-            highlightthickness=0,
-            activebackground=self.ACCENT,
-        ).pack(side="left")
-        tk.Label(
-            vad_frame,
-            textvariable=self._vad_var,
-            bg=self.BG,
-            fg=self.ACCENT,
-            font=("Helvetica", 11, "bold"),
-            width=4,
-        ).pack(side="left", padx=8)
+        self._add_section(layout, "Silence Duration Before Chunk (seconds)")
+        vad_row = QHBoxLayout()
+        vad_val = self._settings.get("vad_silence_duration") or 1.5
+        self._vad_slider = QSlider(Qt.Horizontal)
+        self._vad_slider.setRange(5, 40)   # ×0.1 → 0.5–4.0 s
+        self._vad_slider.setSingleStep(1)
+        self._vad_slider.setValue(int(round(vad_val * 10)))
+        self._vad_slider.setFixedWidth(300)
+        self._vad_label = QLabel(f"{vad_val:.1f}")
+        self._vad_label.setStyleSheet(f"color:{_ACCENT};font-weight:bold;font-size:11pt;")
+        self._vad_label.setFixedWidth(36)
+        self._vad_slider.valueChanged.connect(
+            lambda v: self._vad_label.setText(f"{v / 10:.1f}")
+        )
+        vad_row.addWidget(self._vad_slider)
+        vad_row.addWidget(self._vad_label)
+        vad_row.addStretch()
+        layout.addLayout(vad_row)
 
         # --- Custom Vocabulary ---
-        self._section(frame, "Custom Vocabulary  (one term per line)")
-        self._vocab_text = tk.Text(
-            frame,
-            bg=self.ENTRY_BG,
-            fg=self.FG,
-            insertbackground=self.FG,
-            relief="flat",
-            font=("Helvetica", 11),
-            height=5,
-            wrap="word",
-        )
-        self._vocab_text.pack(fill="x", padx=18, pady=(0, 6))
-        self._vocab_text.insert("1.0", self._settings.get_vocabulary_text())
+        self._add_section(layout, "Custom Vocabulary  (one term per line)")
+        self._vocab_edit = QPlainTextEdit()
+        self._vocab_edit.setFixedHeight(110)
+        self._vocab_edit.setPlainText(self._settings.get_vocabulary_text())
+        layout.addWidget(self._vocab_edit)
 
         # --- Bibliography ---
-        self._section(frame, "Bibliography  (paste BibTeX or reference list)")
-        biblio_btn_row = tk.Frame(frame, bg=self.BG)
-        biblio_btn_row.pack(fill="x", padx=18, pady=(0, 4))
-        tk.Button(
-            biblio_btn_row,
-            text="📂  Load .bib file",
-            bg=self.BTN_BG,
-            fg=self.FG,
-            relief="flat",
-            padx=8,
-            command=self._load_bib,
-        ).pack(side="left")
-        self._biblio_text = tk.Text(
-            frame,
-            bg=self.ENTRY_BG,
-            fg=self.FG,
-            insertbackground=self.FG,
-            relief="flat",
-            font=("Courier", 10),
-            height=6,
-            wrap="none",
-        )
-        self._biblio_text.pack(fill="x", padx=18, pady=(0, 6))
-        self._biblio_text.insert("1.0", self._settings.get("bibliography") or "")
+        self._add_section(layout, "Bibliography  (paste BibTeX or reference list)")
+        bib_btn_row = QHBoxLayout()
+        load_bib_btn = QPushButton("📂  Load .bib file")
+        load_bib_btn.clicked.connect(self._load_bib)
+        bib_btn_row.addWidget(load_bib_btn)
+        bib_btn_row.addStretch()
+        layout.addLayout(bib_btn_row)
+        self._biblio_edit = QPlainTextEdit()
+        self._biblio_edit.setFixedHeight(130)
+        self._biblio_edit.setPlainText(self._settings.get("bibliography") or "")
+        layout.addWidget(self._biblio_edit)
 
         # --- Save button ---
-        tk.Frame(frame, bg=self.BG, height=8).pack()
-        tk.Button(
-            frame,
-            text="  Save Settings  ",
-            bg=self.ACCENT,
-            fg="#1e1e2e",
-            activebackground="#74c7ec",
-            font=("Helvetica", 12, "bold"),
-            relief="flat",
-            padx=16,
-            pady=8,
-            command=self._save,
-        ).pack(pady=(0, 18))
+        layout.addSpacing(8)
+        save_btn = QPushButton("  Save Settings  ")
+        save_btn.setObjectName("save_btn")
+        save_btn.clicked.connect(self._save)
+        layout.addWidget(save_btn, alignment=Qt.AlignHCenter)
+        layout.addSpacing(10)
 
-    def _section(self, parent, title: str):
-        tk.Label(
-            parent,
-            text=title,
-            bg=self.BG,
-            fg=self.ACCENT,
-            font=("Helvetica", 11, "bold"),
-            anchor="w",
-            padx=18,
-            pady=(12, 2),
-        ).pack(fill="x")
-        tk.Frame(parent, bg="#313244", height=1).pack(fill="x", padx=18)
+    def _add_section(self, layout: QVBoxLayout, title: str):
+        lbl = QLabel(title)
+        lbl.setObjectName("section_title")
+        layout.addWidget(lbl)
+        sep = QWidget()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background:{_ENTRY_BG};")
+        layout.addWidget(sep)
+
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
+
+    def _toggle_api_visibility(self):
+        if self._api_key_edit.echoMode() == QLineEdit.Password:
+            self._api_key_edit.setEchoMode(QLineEdit.Normal)
+        else:
+            self._api_key_edit.setEchoMode(QLineEdit.Password)
 
     def _load_bib(self):
-        path = filedialog.askopenfilename(
-            filetypes=[("BibTeX files", "*.bib"), ("All files", "*.*")]
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load BibTeX file", "", "BibTeX files (*.bib);;All files (*)"
         )
         if not path:
             return
         try:
             with open(path, encoding="utf-8") as f:
-                content = f.read()
-            self._biblio_text.delete("1.0", "end")
-            self._biblio_text.insert("1.0", content)
+                self._biblio_edit.setPlainText(f.read())
         except OSError as e:
-            messagebox.showerror("Error", f"Could not read file:\n{e}")
+            QMessageBox.critical(self, "Error", f"Could not read file:\n{e}")
 
     def _save(self):
+        lang = next(
+            (code for code, rb in self._lang_buttons.items() if rb.isChecked()), "fr"
+        )
         updates = {
-            "api_key": self._api_key_var.get().strip(),
-            "language": self._lang_var.get(),
-            "shortcut_key": self._shortcut_var.get().strip().lower(),
-            "vad_silence_duration": round(self._vad_var.get(), 1),
-            "bibliography": self._biblio_text.get("1.0", "end").strip(),
+            "api_key": self._api_key_edit.text().strip(),
+            "language": lang,
+            "shortcut_key": self._shortcut_edit.text().strip().lower(),
+            "vad_silence_duration": round(self._vad_slider.value() / 10, 1),
+            "bibliography": self._biblio_edit.toPlainText().strip(),
         }
         self._settings.update(updates)
-        self._settings.set_vocabulary_from_text(self._vocab_text.get("1.0", "end"))
-        messagebox.showinfo(
-            "Saved", "Settings saved.\nRestart DictaThesis for shortcut changes to take effect."
+        self._settings.set_vocabulary_from_text(self._vocab_edit.toPlainText())
+        QMessageBox.information(
+            self,
+            "Saved",
+            "Settings saved.\nRestart DictaThesis for shortcut changes to take effect.",
         )

@@ -3,10 +3,8 @@ DictaThesis — entry point.
 
 Threading model
 ---------------
-  Main thread    : pystray tray icon (blocks with icon.run())
-  asyncio thread : event loop for API calls and pipeline orchestration
+  Main thread    : Qt event loop + asyncio (via qasync.QEventLoop)
   pynput thread  : global keyboard listener (auto-created by pynput)
-  hud thread     : tkinter HUD window (daemon)
   sounddevice    : audio callback thread (auto-created by sounddevice)
 """
 
@@ -14,9 +12,11 @@ from __future__ import annotations
 
 import asyncio
 import platform
-import threading
+import sys
 
+import qasync
 from pynput import keyboard as kb_module
+from PySide6.QtWidgets import QApplication
 
 from audio import AudioCapture
 from hud import HUD
@@ -56,6 +56,14 @@ def _resolve_hotkey(key_str: str) -> object | None:
     return _KEY_MAP.get(key_str.lower())
 
 
+def _is_wsl2() -> bool:
+    try:
+        with open("/proc/version") as f:
+            return "microsoft" in f.read().lower()
+    except OSError:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Application
 # ---------------------------------------------------------------------------
@@ -64,12 +72,12 @@ def _resolve_hotkey(key_str: str) -> object | None:
 class DictaThesis:
     def __init__(self):
         self.settings = SettingsStore()
-        self.loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
+        self.loop: asyncio.AbstractEventLoop | None = None
         self._recording = False
         self._listener: kb_module.Listener | None = None
 
-        # Build components
-        self.hud = HUD(on_stop=self._stop_dictation)
+        # Settings UI and pipeline are created in __init__ so they can be
+        # referenced before run() sets up the Qt objects.
         self.settings_ui = SettingsWindow(self.settings)
 
         self.pipeline = Pipeline(
@@ -77,20 +85,6 @@ class DictaThesis:
             on_draft=self._on_draft,
             on_final=self._on_final,
             on_state_change=self._on_pipeline_state,
-        )
-
-        self.audio = AudioCapture(
-            on_chunk=self.pipeline.on_chunk,
-            loop=self.loop,
-            vad_silence_duration=self.settings.get("vad_silence_duration"),
-            vad_mode=self.settings.get("vad_mode"),
-        )
-
-        self.tray = TrayIcon(
-            on_toggle=self._toggle_dictation,
-            on_settings=self.settings_ui.open,
-            on_quit=self._quit,
-            settings=self.settings,
         )
 
     # ------------------------------------------------------------------
@@ -127,10 +121,9 @@ class DictaThesis:
         self.pipeline.stop_session()
         self.hud.set_status("⏳  Finishing…  (processing remaining chunks)")
         self.tray.set_processing()
-        # Idle status will be set when injection worker finishes (on_pipeline_state)
 
     # ------------------------------------------------------------------
-    # Pipeline callbacks (called from asyncio thread)
+    # Pipeline callbacks (called from asyncio/main thread via qasync)
     # ------------------------------------------------------------------
 
     def _on_draft(self, chunk_id: str, draft_text: str):
@@ -145,10 +138,16 @@ class DictaThesis:
             self.tray.set_idle()
 
     # ------------------------------------------------------------------
-    # Keyboard listener
+    # Keyboard listener (pynput thread → main thread via call_soon_threadsafe)
     # ------------------------------------------------------------------
 
     def _setup_hotkey(self):
+        if _is_wsl2():
+            print(
+                "[main] WSL2 detected. Global hotkeys via pynput may not work "
+                "under Wayland — try running with DISPLAY set (XWayland)."
+            )
+
         key_str = self.settings.get("shortcut_key") or "f9"
         target_key = _resolve_hotkey(key_str)
         if target_key is None:
@@ -157,11 +156,13 @@ class DictaThesis:
 
         def on_press(key):
             if key == target_key:
-                # Schedule toggle on the asyncio loop (non-blocking from pynput thread)
                 self.loop.call_soon_threadsafe(self._toggle_dictation)
 
-        self._listener = kb_module.Listener(on_press=on_press)
-        self._listener.start()
+        try:
+            self._listener = kb_module.Listener(on_press=on_press)
+            self._listener.start()
+        except Exception as e:
+            print(f"[main] Could not start keyboard listener: {e}")
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -171,23 +172,35 @@ class DictaThesis:
         self._stop_dictation()
         if self._listener:
             self._listener.stop()
-        self.loop.call_soon_threadsafe(self.loop.stop)
-        if self.tray._icon:
-            self.tray._icon.stop()
+        if self.loop:
+            self.loop.stop()
 
     def run(self):
-        # 1. Start asyncio event loop in background thread
-        loop_thread = threading.Thread(
-            target=self.loop.run_forever, name="asyncio-loop", daemon=True
+        app = QApplication(sys.argv)
+        app.setQuitOnLastWindowClosed(False)  # keep running when HUD is closed
+
+        self.loop = qasync.QEventLoop(app)
+        asyncio.set_event_loop(self.loop)
+
+        # Build GUI components (must happen after QApplication exists)
+        self.hud = HUD(on_stop=self._stop_dictation)
+        self.tray = TrayIcon(
+            on_toggle=self._toggle_dictation,
+            on_settings=self.settings_ui.open,
+            on_quit=self._quit,
+            settings=self.settings,
         )
-        loop_thread.start()
 
-        # 2. Start HUD in background thread
-        hud_thread = threading.Thread(target=self.hud.run, name="hud", daemon=True)
-        hud_thread.start()
-        self.hud.wait_ready(timeout=5.0)
+        # AudioCapture needs the event loop reference
+        self.audio = AudioCapture(
+            on_chunk=self.pipeline.on_chunk,
+            loop=self.loop,
+            vad_silence_duration=self.settings.get("vad_silence_duration"),
+            vad_mode=self.settings.get("vad_mode"),
+        )
 
-        # 3. Set up global hotkey listener
+        self.hud.show()
+        self.tray.run()   # non-blocking: just shows the system tray icon
         self._setup_hotkey()
 
         print(
@@ -199,8 +212,8 @@ class DictaThesis:
             " — open Settings from the tray menu\n"
         )
 
-        # 4. Run tray icon in main thread (blocks until quit)
-        self.tray.run()
+        with self.loop:
+            self.loop.run_forever()
 
 
 # ---------------------------------------------------------------------------
@@ -209,8 +222,6 @@ class DictaThesis:
 
 
 def main():
-    # On macOS, pynput keyboard listener requires the process to have
-    # accessibility permissions (System Preferences → Security → Accessibility).
     if platform.system() == "Darwin":
         print("[main] On macOS: grant Accessibility permission if hotkey doesn't work.")
 

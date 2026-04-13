@@ -3,6 +3,7 @@ Persistent JSON config for DictaThesis.
 Stored at ~/.config/dictathesis/config.json (Linux/macOS)
          %APPDATA%/DictaThesis/config.json (Windows)
 """
+
 import json
 import os
 import platform
@@ -10,16 +11,16 @@ from pathlib import Path
 
 DEFAULTS = {
     "api_key": "",
-    "language": "fr",          # "fr" | "en" | "auto"
-    "mode": "normal",           # "normal" | "equation"
+    "language": "fr",  # "fr" | "en" | "auto"
+    "mode": "normal",  # "normal" | "equation"
     "shortcut_key": "f9",
     "vad_silence_duration": 1.5,  # seconds of silence before chunk emitted
-    "vad_mode": 2,              # webrtcvad aggressiveness: 0–3
-    "vocabulary": [],           # list of custom terms (strings)
-    "bibliography": "",         # raw text of bibliography
+    "vad_mode": 2,  # webrtcvad aggressiveness: 0–3
+    "vocabulary": [],  # list of custom terms (strings)
+    "bibliography": "",  # raw text of bibliography
     "hud_geometry": "420x220+60+60",
     "hud_opacity": 0.92,
-    "inject_delay": 0.08,       # seconds to wait after clipboard write before paste
+    "inject_delay": 0.08,  # seconds to wait after clipboard write before paste
 }
 
 
@@ -46,7 +47,7 @@ class SettingsStore:
     def _load(self):
         if self._path.exists():
             try:
-                with open(self._path, "r", encoding="utf-8") as f:
+                with open(self._path, encoding="utf-8") as f:
                     loaded = json.load(f)
                 self._data = {**DEFAULTS, **loaded}
             except (json.JSONDecodeError, OSError):

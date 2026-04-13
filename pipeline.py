@@ -7,13 +7,15 @@ Each audio chunk goes through:
 Chunks are processed in parallel (asyncio tasks) but injected into the target
 app in strict dictation order via an ordered injection queue.
 """
+
 from __future__ import annotations
+
 import asyncio
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Optional
 
 import api_client
 from injector import inject_text
@@ -34,8 +36,8 @@ class Chunk:
     index: int
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     state: ChunkState = ChunkState.RECEIVED
-    draft_text: Optional[str] = None
-    final_text: Optional[str] = None
+    draft_text: str | None = None
+    final_text: str | None = None
     created_at: float = field(default_factory=time.time)
 
 
@@ -53,9 +55,9 @@ class Pipeline:
     def __init__(
         self,
         settings,
-        on_draft: Optional[Callable[[str, str], None]] = None,
-        on_final: Optional[Callable[[str, str], None]] = None,
-        on_state_change: Optional[Callable[[bool], None]] = None,
+        on_draft: Callable[[str, str], None] | None = None,
+        on_final: Callable[[str, str], None] | None = None,
+        on_state_change: Callable[[bool], None] | None = None,
     ):
         self._settings = settings
         self._on_draft = on_draft
@@ -63,12 +65,12 @@ class Pipeline:
         self._on_state_change = on_state_change
 
         self._chunks: dict[str, Chunk] = {}
-        self._session_context: list[str] = []   # rolling last-5 finalized texts
+        self._session_context: list[str] = []  # rolling last-5 finalized texts
 
         # Ordered injection: tracks which chunk index to inject next
         self._next_inject_index: int = 0
         self._chunk_counter: int = 0
-        self._finalized: dict[int, str] = {}     # index → final_text (ready to inject)
+        self._finalized: dict[int, str] = {}  # index → final_text (ready to inject)
         self._inject_event = asyncio.Event()
 
         self._active = False
@@ -88,9 +90,7 @@ class Pipeline:
         if self._on_state_change:
             self._on_state_change(True)
         # Start the injection worker
-        self._inject_task = asyncio.get_event_loop().create_task(
-            self._injection_worker()
-        )
+        self._inject_task = asyncio.get_event_loop().create_task(self._injection_worker())
 
     def stop_session(self):
         self._active = False
@@ -109,9 +109,7 @@ class Pipeline:
         chunk = Chunk(index=index)
         self._chunks[chunk.id] = chunk
 
-        task = asyncio.get_event_loop().create_task(
-            self._process_chunk(chunk, wav_bytes)
-        )
+        task = asyncio.get_event_loop().create_task(self._process_chunk(chunk, wav_bytes))
         self._tasks.append(task)
 
     # ------------------------------------------------------------------
@@ -154,7 +152,7 @@ class Pipeline:
             final_text = result.get("full_text") or draft
         except Exception as e:
             print(f"[pipeline] Refinement error for chunk {chunk.id}: {e}")
-            final_text = draft   # graceful degradation
+            final_text = draft  # graceful degradation
 
         # Check for stop_dictation command
         stop_requested = any(
@@ -206,9 +204,7 @@ class Pipeline:
                 self._next_inject_index += 1
                 if text.strip():
                     # inject_text is blocking — run in executor
-                    await asyncio.get_event_loop().run_in_executor(
-                        None, inject_text, text
-                    )
+                    await asyncio.get_event_loop().run_in_executor(None, inject_text, text)
 
             # Check if session is done and all chunks injected
             if not self._active and self._next_inject_index >= self._chunk_counter:
@@ -218,5 +214,5 @@ class Pipeline:
             self._inject_event.clear()
             try:
                 await asyncio.wait_for(self._inject_event.wait(), timeout=30.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 break

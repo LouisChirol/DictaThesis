@@ -1,8 +1,8 @@
 """
 System prompt assembly and voice command → text mapping for the 2nd-pass LLM.
 """
+
 from __future__ import annotations
-import json
 
 # ---------------------------------------------------------------------------
 # JSON schema for structured LLM output
@@ -21,11 +21,21 @@ RESPONSE_SCHEMA = {
                     "command": {
                         "type": "string",
                         "enum": [
-                            "none", "period", "comma", "newline",
-                            "new_paragraph", "heading1", "heading2", "heading3",
-                            "bibliography_ref", "bold_start", "bold_end",
-                            "italic_start", "italic_end",
-                            "equation_start", "equation_end",
+                            "none",
+                            "period",
+                            "comma",
+                            "newline",
+                            "new_paragraph",
+                            "heading1",
+                            "heading2",
+                            "heading3",
+                            "bibliography_ref",
+                            "bold_start",
+                            "bold_end",
+                            "italic_start",
+                            "italic_end",
+                            "equation_start",
+                            "equation_end",
                             "stop_dictation",
                         ],
                     },
@@ -134,9 +144,7 @@ def build_prompt(
 
     if session_context:
         recent = " ".join(session_context[-5:])
-        context_parts.append(
-            f"### Recent dictated text (for coherence and context):\n{recent}"
-        )
+        context_parts.append(f"### Recent dictated text (for coherence and context):\n{recent}")
 
     vocabulary = settings.get("vocabulary")
     if vocabulary:
@@ -164,6 +172,7 @@ def build_prompt(
 # ---------------------------------------------------------------------------
 # Command → text application
 # ---------------------------------------------------------------------------
+
 
 def apply_commands(segments: list[dict], bibliography: str = "", mode: str = "normal") -> str:
     """

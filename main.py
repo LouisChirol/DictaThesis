@@ -9,10 +9,11 @@ Threading model
   hud thread     : tkinter HUD window (daemon)
   sounddevice    : audio callback thread (auto-created by sounddevice)
 """
+
 from __future__ import annotations
+
 import asyncio
 import platform
-import sys
 import threading
 
 from pynput import keyboard as kb_module
@@ -29,12 +30,18 @@ from tray import TrayIcon
 # ---------------------------------------------------------------------------
 
 _KEY_MAP: dict[str, object] = {
-    "f1": kb_module.Key.f1, "f2": kb_module.Key.f2,
-    "f3": kb_module.Key.f3, "f4": kb_module.Key.f4,
-    "f5": kb_module.Key.f5, "f6": kb_module.Key.f6,
-    "f7": kb_module.Key.f7, "f8": kb_module.Key.f8,
-    "f9": kb_module.Key.f9, "f10": kb_module.Key.f10,
-    "f11": kb_module.Key.f11, "f12": kb_module.Key.f12,
+    "f1": kb_module.Key.f1,
+    "f2": kb_module.Key.f2,
+    "f3": kb_module.Key.f3,
+    "f4": kb_module.Key.f4,
+    "f5": kb_module.Key.f5,
+    "f6": kb_module.Key.f6,
+    "f7": kb_module.Key.f7,
+    "f8": kb_module.Key.f8,
+    "f9": kb_module.Key.f9,
+    "f10": kb_module.Key.f10,
+    "f11": kb_module.Key.f11,
+    "f12": kb_module.Key.f12,
     "scroll_lock": kb_module.Key.scroll_lock,
     "pause": kb_module.Key.pause,
     "insert": kb_module.Key.insert,
@@ -52,6 +59,7 @@ def _resolve_hotkey(key_str: str) -> object | None:
 # ---------------------------------------------------------------------------
 # Application
 # ---------------------------------------------------------------------------
+
 
 class DictaThesis:
     def __init__(self):
@@ -187,7 +195,8 @@ class DictaThesis:
             f"  Shortcut : {self.settings.get('shortcut_key').upper()}\n"
             f"  Language : {self.settings.get('language')}\n"
             f"  Mode     : {self.settings.get('mode')}\n"
-            f"  API key  : {'configured' if self.settings.get('api_key') else 'NOT SET — open Settings'}\n"
+            f"  API key  : {'configured' if self.settings.get('api_key') else 'NOT SET'}"
+            " — open Settings from the tray menu\n"
         )
 
         # 4. Run tray icon in main thread (blocks until quit)
@@ -197,6 +206,7 @@ class DictaThesis:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main():
     # On macOS, pynput keyboard listener requires the process to have

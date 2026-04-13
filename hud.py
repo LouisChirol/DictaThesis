@@ -9,11 +9,12 @@ Shows dictation pipeline state in real time:
 Must be run in its own thread. All updates from other threads go via
 root.after(0, fn) which is tkinter's thread-safe update mechanism.
 """
+
 from __future__ import annotations
+
 import threading
 import tkinter as tk
-from tkinter import font as tkfont
-from typing import Callable, Optional
+from collections.abc import Callable
 
 
 class HUD:
@@ -29,11 +30,11 @@ class HUD:
     STOP_BG = "#e63946"
     STOP_HOVER = "#c1121f"
 
-    def __init__(self, on_stop: Optional[Callable[[], None]] = None):
+    def __init__(self, on_stop: Callable[[], None] | None = None):
         self._on_stop = on_stop
-        self._root: Optional[tk.Tk] = None
-        self._text: Optional[tk.Text] = None
-        self._status_var: Optional[tk.StringVar] = None
+        self._root: tk.Tk | None = None
+        self._text: tk.Text | None = None
+        self._status_var: tk.StringVar | None = None
         self._ready = threading.Event()
         self._chunk_tags: dict[str, tuple[str, str]] = {}  # chunk_id → (start, end)
 
@@ -161,7 +162,6 @@ class HUD:
         w.config(state="normal")
         start = w.index("end-1c")
         w.insert("end", f"[{chunk_id}] ", ("label",))
-        label_end = w.index("end-1c")
         w.insert("end", draft_text + "\n", ("draft", chunk_id))
         end = w.index("end-1c")
         w.tag_add(chunk_id, start, end)
@@ -181,8 +181,7 @@ class HUD:
             w.config(state="normal")
             w.delete(start, end)
             w.insert(start, f"[{chunk_id}] ", ("label",))
-            w.insert(f"{start} + {len(chunk_id) + 3}c", final_text + "\n",
-                     ("final", chunk_id))
+            w.insert(f"{start} + {len(chunk_id) + 3}c", final_text + "\n", ("final", chunk_id))
             # Re-tag the whole range
             new_end = w.index(f"{start} lineend +1c")
             w.tag_remove(chunk_id, "1.0", "end")

@@ -7,13 +7,14 @@ Phase 3: drop-in webrtcvad replacement via the USE_WEBRTCVAD flag.
 Chunks are emitted as WAV bytes via an async callback scheduled on the
 provided asyncio event loop (thread-safe).
 """
+
 from __future__ import annotations
+
 import asyncio
 import io
 import threading
 import wave
-from collections import deque
-from typing import Callable, Awaitable, Optional
+from collections.abc import Awaitable, Callable
 
 import numpy as np
 import sounddevice as sd
@@ -21,10 +22,10 @@ import sounddevice as sd
 # Set True to use webrtcvad instead of energy VAD (requires: pip install webrtcvad)
 USE_WEBRTCVAD = False
 
-SAMPLE_RATE = 16_000       # Hz  — required by Voxtral
+SAMPLE_RATE = 16_000  # Hz  — required by Voxtral
 CHANNELS = 1
 DTYPE = "int16"
-BLOCK_MS = 30              # ms per audio frame fed to VAD
+BLOCK_MS = 30  # ms per audio frame fed to VAD
 BLOCK_SAMPLES = SAMPLE_RATE * BLOCK_MS // 1000  # 480 samples
 
 
@@ -44,11 +45,13 @@ def _frames_to_wav(frames: list[np.ndarray]) -> bytes:
 # Energy VAD (Phase 1 — default)
 # ---------------------------------------------------------------------------
 
+
 class _EnergyVAD:
     """
     Simple RMS-based voice activity detector.
     Suitable for quiet thesis-writing environments.
     """
+
     def __init__(self, rms_threshold: int = 400, silence_frames: int = 50):
         self.rms_threshold = rms_threshold
         self.silence_frames = silence_frames  # ~1.5 s at 30 ms/frame
@@ -62,9 +65,11 @@ class _EnergyVAD:
 # WebRTC VAD (Phase 3 — higher accuracy)
 # ---------------------------------------------------------------------------
 
+
 class _WebRTCVAD:
     def __init__(self, mode: int = 2):
         import webrtcvad  # noqa: PLC0415
+
         self._vad = webrtcvad.Vad(mode)
 
     def is_speech(self, frame: np.ndarray) -> bool:
@@ -78,6 +83,7 @@ class _WebRTCVAD:
 # ---------------------------------------------------------------------------
 # AudioCapture
 # ---------------------------------------------------------------------------
+
 
 class AudioCapture:
     """
@@ -115,11 +121,11 @@ class AudioCapture:
             )
 
         self._silence_limit = max(1, int(vad_silence_duration / (BLOCK_MS / 1000)))
-        self._min_speech_frames = 5   # ~150 ms minimum speech
+        self._min_speech_frames = 5  # ~150 ms minimum speech
 
         self._speech_frames: list[np.ndarray] = []
         self._silence_count: int = 0
-        self._stream: Optional[sd.InputStream] = None
+        self._stream: sd.InputStream | None = None
         self._recording = False
         self._lock = threading.Lock()
 

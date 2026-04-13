@@ -3,9 +3,10 @@ Text injection at cursor position in the currently focused application.
 Strategy: write text to clipboard, simulate Ctrl+V (or Cmd+V on macOS).
 This works universally in any application — Word, TeXStudio, browsers, etc.
 """
+
 import platform
-import time
 import threading
+import time
 
 import pyperclip
 from pynput.keyboard import Controller, Key

@@ -3,9 +3,11 @@ Async Mistral API client.
   - 1st pass: POST /v1/audio/transcriptions  (Voxtral)
   - 2nd pass: POST /v1/chat/completions      (Mistral Medium, JSON output)
 """
+
 from __future__ import annotations
-import json
+
 import io
+import json
 
 import httpx
 
@@ -64,9 +66,7 @@ async def refine(
     On any error, returns a minimal dict using the raw draft text so the
     pipeline can fall back gracefully.
     """
-    system_prompt, user_message = build_prompt(
-        draft_text, session_context, settings, mode
-    )
+    system_prompt, user_message = build_prompt(draft_text, session_context, settings, mode)
 
     payload = {
         "model": REFINEMENT_MODEL,

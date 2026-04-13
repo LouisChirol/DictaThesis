@@ -9,16 +9,18 @@ States
 
 The menu updates dynamically based on recording state.
 """
+
 from __future__ import annotations
-from typing import Callable, Optional
 
-from PIL import Image, ImageDraw
+from collections.abc import Callable
+
 import pystray
-
+from PIL import Image, ImageDraw
 
 # ---------------------------------------------------------------------------
 # Icon generation
 # ---------------------------------------------------------------------------
+
 
 def _make_icon(fill_rgb: tuple[int, int, int], dot_rgb: tuple | None = None) -> Image.Image:
     """64×64 RGBA circle with an optional small indicator dot."""
@@ -37,8 +39,8 @@ def _make_icon(fill_rgb: tuple[int, int, int], dot_rgb: tuple | None = None) -> 
 
 
 ICONS: dict[str, Image.Image] = {
-    "idle":       _make_icon((55, 110, 200)),
-    "recording":  _make_icon((200, 45, 45), dot_rgb=(255, 80, 80)),
+    "idle": _make_icon((55, 110, 200)),
+    "recording": _make_icon((200, 45, 45), dot_rgb=(255, 80, 80)),
     "processing": _make_icon((55, 110, 200), dot_rgb=(255, 165, 0)),
 }
 
@@ -46,6 +48,7 @@ ICONS: dict[str, Image.Image] = {
 # ---------------------------------------------------------------------------
 # TrayIcon
 # ---------------------------------------------------------------------------
+
 
 class TrayIcon:
     def __init__(
@@ -60,7 +63,7 @@ class TrayIcon:
         self._on_quit = on_quit
         self._settings = settings
         self._recording = False
-        self._icon: Optional[pystray.Icon] = None
+        self._icon: pystray.Icon | None = None
 
     # ------------------------------------------------------------------
     # Public
@@ -79,8 +82,12 @@ class TrayIcon:
     def set_recording(self, recording: bool):
         self._recording = recording
         state = "recording" if recording else "idle"
-        self._update_icon(state, "🔴  Recording…  (F9 or HUD stop button)" if recording
-                          else "DictaThesis — Ready (F9 to start)")
+        self._update_icon(
+            state,
+            "🔴  Recording…  (F9 or HUD stop button)"
+            if recording
+            else "DictaThesis — Ready (F9 to start)",
+        )
 
     def set_processing(self):
         self._update_icon("processing", "⏳  Processing…")
@@ -107,12 +114,14 @@ class TrayIcon:
             def _inner(icon, item):
                 self._settings.set("language", lang)
                 self._icon.menu = self._build_menu()
+
             return _inner
 
         def _set_mode(mode):
             def _inner(icon, item):
                 self._settings.set("mode", mode)
                 self._icon.menu = self._build_menu()
+
             return _inner
 
         lang = self._settings.get("language")
@@ -125,17 +134,20 @@ class TrayIcon:
                 f"Language: {lang.upper()}",
                 pystray.Menu(
                     pystray.MenuItem(
-                        "Français", _set_lang("fr"),
+                        "Français",
+                        _set_lang("fr"),
                         checked=lambda item: self._settings.get("language") == "fr",
                         radio=True,
                     ),
                     pystray.MenuItem(
-                        "English", _set_lang("en"),
+                        "English",
+                        _set_lang("en"),
                         checked=lambda item: self._settings.get("language") == "en",
                         radio=True,
                     ),
                     pystray.MenuItem(
-                        "Auto-detect", _set_lang("auto"),
+                        "Auto-detect",
+                        _set_lang("auto"),
                         checked=lambda item: self._settings.get("language") == "auto",
                         radio=True,
                     ),
@@ -145,12 +157,14 @@ class TrayIcon:
                 f"Mode: {mode.capitalize()}",
                 pystray.Menu(
                     pystray.MenuItem(
-                        "Normal", _set_mode("normal"),
+                        "Normal",
+                        _set_mode("normal"),
                         checked=lambda item: self._settings.get("mode") == "normal",
                         radio=True,
                     ),
                     pystray.MenuItem(
-                        "Equation  (LaTeX math)", _set_mode("equation"),
+                        "Equation  (LaTeX math)",
+                        _set_mode("equation"),
                         checked=lambda item: self._settings.get("mode") == "equation",
                         radio=True,
                     ),

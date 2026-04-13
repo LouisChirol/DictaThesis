@@ -2,11 +2,12 @@
 Settings window — opens in its own thread.
 Uses tkinter directly (no customtkinter dependency) for portability.
 """
+
 from __future__ import annotations
+
 import threading
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from typing import Optional
+from tkinter import filedialog, messagebox, ttk
 
 
 class SettingsWindow:
@@ -20,7 +21,7 @@ class SettingsWindow:
 
     def __init__(self, settings):
         self._settings = settings
-        self._root: Optional[tk.Tk] = None
+        self._root: tk.Tk | None = None
         self._lock = threading.Lock()
 
     def open(self):
@@ -66,15 +67,18 @@ class SettingsWindow:
         frame.bind("<Configure>", _resize)
         canvas.bind("<Configure>", lambda e: canvas.itemconfig(frame_id, width=e.width))
 
-        pad = dict(padx=18, pady=6)
+        pad = {"padx": 18, "pady": 6}
 
         # --- Header ---
         hdr = tk.Frame(frame, bg=self.HEADER_BG)
         hdr.pack(fill="x")
         tk.Label(
-            hdr, text="DictaThesis  ·  Settings",
-            bg=self.HEADER_BG, fg=self.ACCENT,
-            font=("Helvetica", 15, "bold"), pady=14,
+            hdr,
+            text="DictaThesis  ·  Settings",
+            bg=self.HEADER_BG,
+            fg=self.ACCENT,
+            font=("Helvetica", 15, "bold"),
+            pady=14,
         ).pack()
 
         # --- API Key ---
@@ -83,17 +87,24 @@ class SettingsWindow:
         api_row = tk.Frame(frame, bg=self.BG)
         api_row.pack(fill="x", **pad)
         api_entry = tk.Entry(
-            api_row, textvariable=self._api_key_var, show="•",
-            bg=self.ENTRY_BG, fg=self.FG, insertbackground=self.FG,
-            relief="flat", font=("Courier", 11), width=38,
+            api_row,
+            textvariable=self._api_key_var,
+            show="•",
+            bg=self.ENTRY_BG,
+            fg=self.FG,
+            insertbackground=self.FG,
+            relief="flat",
+            font=("Courier", 11),
+            width=38,
         )
         api_entry.pack(side="left", ipady=4, padx=(0, 8))
         tk.Button(
-            api_row, text="Show",
-            bg=self.BTN_BG, fg=self.FG, relief="flat",
-            command=lambda: api_entry.config(
-                show="" if api_entry.cget("show") == "•" else "•"
-            ),
+            api_row,
+            text="Show",
+            bg=self.BTN_BG,
+            fg=self.FG,
+            relief="flat",
+            command=lambda: api_entry.config(show="" if api_entry.cget("show") == "•" else "•"),
         ).pack(side="left")
 
         # --- Language ---
@@ -103,9 +114,15 @@ class SettingsWindow:
         lang_frame.pack(fill="x", **pad)
         for val, lbl in [("fr", "Français"), ("en", "English"), ("auto", "Auto-detect")]:
             tk.Radiobutton(
-                lang_frame, text=lbl, variable=self._lang_var, value=val,
-                bg=self.BG, fg=self.FG, selectcolor=self.ENTRY_BG,
-                activebackground=self.BG, activeforeground=self.ACCENT,
+                lang_frame,
+                text=lbl,
+                variable=self._lang_var,
+                value=val,
+                bg=self.BG,
+                fg=self.FG,
+                selectcolor=self.ENTRY_BG,
+                activebackground=self.BG,
+                activeforeground=self.ACCENT,
                 font=("Helvetica", 11),
             ).pack(side="left", padx=8)
 
@@ -115,14 +132,21 @@ class SettingsWindow:
         shortcut_frame = tk.Frame(frame, bg=self.BG)
         shortcut_frame.pack(fill="x", **pad)
         tk.Entry(
-            shortcut_frame, textvariable=self._shortcut_var,
-            bg=self.ENTRY_BG, fg=self.FG, insertbackground=self.FG,
-            relief="flat", font=("Courier", 11), width=16,
+            shortcut_frame,
+            textvariable=self._shortcut_var,
+            bg=self.ENTRY_BG,
+            fg=self.FG,
+            insertbackground=self.FG,
+            relief="flat",
+            font=("Courier", 11),
+            width=16,
         ).pack(side="left", ipady=4, padx=(0, 8))
         tk.Label(
             shortcut_frame,
             text="(e.g. f9, f8, scroll_lock)",
-            bg=self.BG, fg="#888899", font=("Helvetica", 10),
+            bg=self.BG,
+            fg="#888899",
+            font=("Helvetica", 10),
         ).pack(side="left")
 
         # --- VAD Silence Duration ---
@@ -131,23 +155,39 @@ class SettingsWindow:
         vad_frame = tk.Frame(frame, bg=self.BG)
         vad_frame.pack(fill="x", **pad)
         tk.Scale(
-            vad_frame, variable=self._vad_var, from_=0.5, to=4.0, resolution=0.1,
-            orient="horizontal", length=300,
-            bg=self.BG, fg=self.FG, troughcolor=self.ENTRY_BG,
-            highlightthickness=0, activebackground=self.ACCENT,
+            vad_frame,
+            variable=self._vad_var,
+            from_=0.5,
+            to=4.0,
+            resolution=0.1,
+            orient="horizontal",
+            length=300,
+            bg=self.BG,
+            fg=self.FG,
+            troughcolor=self.ENTRY_BG,
+            highlightthickness=0,
+            activebackground=self.ACCENT,
         ).pack(side="left")
         tk.Label(
-            vad_frame, textvariable=self._vad_var,
-            bg=self.BG, fg=self.ACCENT, font=("Helvetica", 11, "bold"), width=4,
+            vad_frame,
+            textvariable=self._vad_var,
+            bg=self.BG,
+            fg=self.ACCENT,
+            font=("Helvetica", 11, "bold"),
+            width=4,
         ).pack(side="left", padx=8)
 
         # --- Custom Vocabulary ---
         self._section(frame, "Custom Vocabulary  (one term per line)")
         self._vocab_text = tk.Text(
             frame,
-            bg=self.ENTRY_BG, fg=self.FG, insertbackground=self.FG,
-            relief="flat", font=("Helvetica", 11),
-            height=5, wrap="word",
+            bg=self.ENTRY_BG,
+            fg=self.FG,
+            insertbackground=self.FG,
+            relief="flat",
+            font=("Helvetica", 11),
+            height=5,
+            wrap="word",
         )
         self._vocab_text.pack(fill="x", padx=18, pady=(0, 6))
         self._vocab_text.insert("1.0", self._settings.get_vocabulary_text())
@@ -157,15 +197,23 @@ class SettingsWindow:
         biblio_btn_row = tk.Frame(frame, bg=self.BG)
         biblio_btn_row.pack(fill="x", padx=18, pady=(0, 4))
         tk.Button(
-            biblio_btn_row, text="📂  Load .bib file",
-            bg=self.BTN_BG, fg=self.FG, relief="flat", padx=8,
+            biblio_btn_row,
+            text="📂  Load .bib file",
+            bg=self.BTN_BG,
+            fg=self.FG,
+            relief="flat",
+            padx=8,
             command=self._load_bib,
         ).pack(side="left")
         self._biblio_text = tk.Text(
             frame,
-            bg=self.ENTRY_BG, fg=self.FG, insertbackground=self.FG,
-            relief="flat", font=("Courier", 10),
-            height=6, wrap="none",
+            bg=self.ENTRY_BG,
+            fg=self.FG,
+            insertbackground=self.FG,
+            relief="flat",
+            font=("Courier", 10),
+            height=6,
+            wrap="none",
         )
         self._biblio_text.pack(fill="x", padx=18, pady=(0, 6))
         self._biblio_text.insert("1.0", self._settings.get("bibliography") or "")
@@ -175,19 +223,26 @@ class SettingsWindow:
         tk.Button(
             frame,
             text="  Save Settings  ",
-            bg=self.ACCENT, fg="#1e1e2e",
+            bg=self.ACCENT,
+            fg="#1e1e2e",
             activebackground="#74c7ec",
             font=("Helvetica", 12, "bold"),
-            relief="flat", padx=16, pady=8,
+            relief="flat",
+            padx=16,
+            pady=8,
             command=self._save,
         ).pack(pady=(0, 18))
 
     def _section(self, parent, title: str):
         tk.Label(
-            parent, text=title,
-            bg=self.BG, fg=self.ACCENT,
+            parent,
+            text=title,
+            bg=self.BG,
+            fg=self.ACCENT,
             font=("Helvetica", 11, "bold"),
-            anchor="w", padx=18, pady=(12, 2),
+            anchor="w",
+            padx=18,
+            pady=(12, 2),
         ).pack(fill="x")
         tk.Frame(parent, bg="#313244", height=1).pack(fill="x", padx=18)
 
@@ -198,7 +253,7 @@ class SettingsWindow:
         if not path:
             return
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 content = f.read()
             self._biblio_text.delete("1.0", "end")
             self._biblio_text.insert("1.0", content)
@@ -214,7 +269,7 @@ class SettingsWindow:
             "bibliography": self._biblio_text.get("1.0", "end").strip(),
         }
         self._settings.update(updates)
-        self._settings.set_vocabulary_from_text(
-            self._vocab_text.get("1.0", "end")
+        self._settings.set_vocabulary_from_text(self._vocab_text.get("1.0", "end"))
+        messagebox.showinfo(
+            "Saved", "Settings saved.\nRestart DictaThesis for shortcut changes to take effect."
         )
-        messagebox.showinfo("Saved", "Settings saved.\nRestart DictaThesis for shortcut changes to take effect.")

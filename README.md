@@ -40,9 +40,10 @@ Works in **any** application: Google Docs, Word, Overleaf, TeXStudio, email, VSC
 ### Prerequisites
 
 - Python 3.11+
+- Node.js 18+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 - [Mistral API key](https://console.mistral.ai/)
-- **Linux/WSL**: `sudo apt install libportaudio2 portaudio19-dev libxcb-cursor0`
+- **Linux/WSL**: `sudo apt install libportaudio2 portaudio19-dev`
 - **macOS**: `brew install portaudio`
 
 ### Install & Run
@@ -51,16 +52,20 @@ Works in **any** application: Google Docs, Word, Overleaf, TeXStudio, email, VSC
 git clone https://github.com/your-username/DictaThesis.git
 cd DictaThesis
 
-# Install dependencies
+# Install Python backend
+cd python
 uv sync
+cd ..
 
-# Run
-uv run python main.py
+# Install Electron frontend
+cd app
+npm install
+npm start
 ```
 
 ### Mistral API Key
 
-On first run, right-click the tray icon → **Settings** to enter your API key.
+Click the gear icon in the HUD or right-click the tray icon → **Settings** to enter your API key.
 
 Or edit directly: `~/.config/dictathesis/config.json` (Linux/macOS) or `%APPDATA%\DictaThesis\config.json` (Windows)
 
@@ -73,7 +78,7 @@ Or edit directly: `~/.config/dictathesis/config.json` (Linux/macOS) or `%APPDATA
 | **Windows** | Full support |
 | **macOS** | Grant Accessibility permission for hotkey |
 | **Linux (X11)** | Full support |
-| **WSL2** | Works — global hotkey disabled, use tray menu instead |
+| **WSL2** | Works — GPU acceleration auto-disabled |
 
 ---
 
@@ -93,30 +98,42 @@ Or edit directly: `~/.config/dictathesis/config.json` (Linux/macOS) or `%APPDATA
 ## Architecture
 
 ```
-main.py          — Qt app entry point, qasync event loop
-hud.py           — floating PySide6 overlay (always-on-top)
-tray.py          — QSystemTrayIcon + menu
-settings_ui.py   — settings dialog (PySide6)
-pipeline.py      — two-pass state machine (Voxtral → Mistral)
-audio.py         — sounddevice capture + VAD chunking
-api_client.py    — async Mistral API calls (httpx)
-injector.py      — clipboard + Ctrl/Cmd+V text injection
-prompt.py        — system prompt assembly
-settings_store.py — JSON config
+DictaThesis/
+  python/                    # Python backend (sidecar process)
+    sidecar.py               — headless IPC bridge (stdin/stdout JSONL)
+    pipeline.py              — two-pass state machine (Voxtral → Mistral)
+    audio.py                 — sounddevice capture + VAD chunking
+    api_client.py            — async Mistral API calls (httpx)
+    injector.py              — clipboard + Ctrl/Cmd+V text injection
+    prompt.py                — system prompt assembly
+    settings_store.py        — JSON config
+
+  app/                       # Electron frontend
+    src/main/
+      main.ts                — app entry, window management, lifecycle
+      sidecar.ts             — Python process spawn + JSONL IPC
+      tray.ts                — system tray with state icons
+      shortcuts.ts           — global shortcut registration
+      ipc-handlers.ts        — renderer ↔ sidecar bridge
+      preload.ts             — contextBridge API
+    src/renderer/
+      index.html             — HUD overlay
+      settings.html          — settings window
+      styles/                — CSS (dark theme, clean modern)
+      app/                   — TypeScript UI logic
 ```
 
 ## Tech Stack
 
 | Component | Library |
 |---|---|
-| GUI / System tray | `PySide6` (Qt) |
-| Async integration | `qasync` |
+| Desktop shell | Electron (TypeScript) |
 | Audio capture | `sounddevice` (PortAudio) |
-| Voice activity | `webrtcvad` |
+| Voice activity | `webrtcvad` / energy VAD |
 | 1st pass STT | Mistral Voxtral |
 | 2nd pass LLM | Mistral Medium |
 | Text injection | `pyperclip` + `pynput` |
-| Global hotkey | `pynput` (except WSL2) |
+| Global hotkey | Electron `globalShortcut` |
 
 ---
 
@@ -125,7 +142,7 @@ settings_store.py — JSON config
 - [x] Phase 1 — Core: F9 → record → Voxtral → inject
 - [x] Phase 2 — Two-pass pipeline + voice commands
 - [x] Phase 3 — VAD chunking + HUD
-- [x] Phase 4 — PySide6 migration (cross-platform GUI)
+- [x] Phase 4 — Electron migration (cross-platform GUI)
 - [ ] Phase 5 — Custom context (bibliography + vocabulary)
 - [ ] Phase 6 — Equation mode (LaTeX math dictation)
-- [ ] Phase 7 — PyInstaller packaging
+- [ ] Phase 7 — Packaging (PyInstaller + Electron Forge)

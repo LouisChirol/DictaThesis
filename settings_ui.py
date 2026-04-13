@@ -5,7 +5,7 @@ Opens non-blocking on the main thread — no separate thread needed.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QObject
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QObject,
     QPlainTextEdit,
     QPushButton,
     QRadioButton,

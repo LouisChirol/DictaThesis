@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <link rel="stylesheet" href="styles/global.css" />
+  <link rel="stylesheet" href="styles/settings.css" />
+  <title>DictaThesis — Settings</title>
+</head>
+<body>
+  <div class="settings">
+    <div class="settings-header">DictaThesis &middot; Settings</div>
+
+    <!-- API Key -->
+    <div class="section">
+      <div class="section-title">Mistral API Key</div>
+      <div class="field">
+        <div class="api-key-wrapper">
+          <input type="password" id="api-key" placeholder="sk-..." />
+          <button class="api-key-toggle" id="api-key-toggle">Show</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Language -->
+    <div class="section">
+      <div class="section-title">Language</div>
+      <div class="field">
+        <div class="radio-group">
+          <label><input type="radio" name="language" value="fr" checked /> Fran&ccedil;ais</label>
+          <label><input type="radio" name="language" value="en" /> English</label>
+          <label><input type="radio" name="language" value="auto" /> Auto-detect</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shortcut Key -->
+    <div class="section">
+      <div class="section-title">Global Shortcut Key</div>
+      <div class="field">
+        <input type="text" id="shortcut-key" value="f9" placeholder="e.g. f9, scroll_lock" />
+      </div>
+    </div>
+
+    <!-- VAD Silence Duration -->
+    <div class="section">
+      <div class="section-title">Silence Duration (VAD)</div>
+      <div class="field">
+        <label>Seconds of silence before a chunk is emitted</label>
+        <div class="slider-wrapper">
+          <input type="range" id="vad-silence" min="0.5" max="4.0" step="0.1" value="1.5" />
+          <span class="slider-value" id="vad-silence-value">1.5s</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Custom Vocabulary -->
+    <div class="section">
+      <div class="section-title">Custom Vocabulary</div>
+      <div class="field">
+        <label>One term per line — helps the AI recognize domain-specific words</label>
+        <textarea id="vocabulary" placeholder="e.g.&#10;Transformer&#10;BERT&#10;fine-tuning"></textarea>
+      </div>
+    </div>
+
+    <!-- Bibliography -->
+    <div class="section">
+      <div class="section-title">Bibliography</div>
+      <div class="field">
+        <label>BibTeX entries for citation references</label>
+        <textarea id="bibliography" placeholder="Paste BibTeX or load a .bib file"></textarea>
+        <div class="btn-row">
+          <button class="btn-secondary" id="btn-load-bib">Load .bib file</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Save -->
+    <button class="btn-save" id="btn-save">Save Settings</button>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">Settings saved</div>
+
+  <script src="app/settings.js"></script>
+</body>
+</html>

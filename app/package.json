@@ -1,0 +1,17 @@
+{
+  "name": "dictathesis",
+  "version": "0.1.0",
+  "description": "Smart voice dictation for thesis writing",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "copy-static": "cp src/renderer/index.html src/renderer/settings.html dist/renderer/ && cp -r src/renderer/styles dist/renderer/",
+    "build": "tsc && npm run copy-static",
+    "start": "npm run build && ELECTRON_RUN_AS_NODE= electron .",
+    "dev": "npm run build && ELECTRON_RUN_AS_NODE= electron .",
+    "watch": "tsc -w"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "typescript": "^5.5.0"
+  }
+}

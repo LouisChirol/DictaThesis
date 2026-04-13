@@ -1,0 +1,170 @@
+/* DictaThesis — HUD overlay styles */
+
+body {
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.hud {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+/* ── Title bar (draggable) ── */
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.titlebar-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-blue);
+  letter-spacing: 0.5px;
+}
+
+.titlebar-buttons {
+  display: flex;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+
+/* ── Buttons ── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+  outline: none;
+}
+
+.btn:hover {
+  filter: brightness(1.15);
+}
+
+.btn:active {
+  filter: brightness(0.9);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.btn-start {
+  background: #2e4a3a;
+  color: var(--accent-green);
+}
+
+.btn-stop {
+  background: #4a2e36;
+  color: var(--accent-red);
+}
+
+.btn-icon {
+  background: var(--bg-overlay);
+  color: var(--text-secondary);
+  padding: 5px 8px;
+  font-size: 14px;
+}
+
+.btn-icon:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Status bar ── */
+
+.status-bar {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-bar.recording {
+  color: var(--accent-red);
+}
+
+.status-bar.processing {
+  color: var(--accent-orange);
+}
+
+/* ── Chunk display area ── */
+
+.chunks {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chunk {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+  animation: fadeIn 0.2s ease;
+}
+
+.chunk-draft {
+  color: var(--draft-text);
+  background: var(--draft-bg);
+  border-left: 3px solid var(--accent-yellow);
+}
+
+.chunk-final {
+  color: var(--final-text);
+  background: var(--final-bg);
+  border-left: 3px solid var(--accent-green);
+}
+
+.chunk-settled {
+  color: var(--settled-text);
+  background: transparent;
+  border-left: 3px solid var(--border);
+  opacity: 0.6;
+  transition: opacity 0.5s ease;
+}
+
+/* ── Empty state ── */
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}

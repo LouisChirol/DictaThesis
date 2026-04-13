@@ -37,65 +37,86 @@ Works in **any** application: Google Docs, Word, Overleaf, TeXStudio, email, VSC
 
 ## Setup
 
+### Prerequisites
+
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
+- [Mistral API key](https://console.mistral.ai/)
+- **Linux/WSL**: `sudo apt install libportaudio2 portaudio19-dev libxcb-cursor0`
+- **macOS**: `brew install portaudio`
+
+### Install & Run
+
 ```bash
+git clone https://github.com/your-username/DictaThesis.git
+cd DictaThesis
+
 # Install dependencies
-pip install -r requirements.txt
+uv sync
 
 # Run
-python main.py
+uv run python main.py
 ```
 
-On first run, right-click the tray icon → **Settings** to enter your Mistral API key.
+### Mistral API Key
 
-### Linux note
-pynput requires X11 for global hotkeys. On Wayland, set `GDK_BACKEND=x11` or use XWayland.
+On first run, right-click the tray icon → **Settings** to enter your API key.
 
-### macOS note
-Grant **Accessibility** permission to Terminal (or your app) in  
-System Preferences → Security & Privacy → Privacy → Accessibility.
+Or edit directly: `~/.config/dictathesis/config.json` (Linux/macOS) or `%APPDATA%\DictaThesis\config.json` (Windows)
 
 ---
 
-## Configuration (Settings window)
+## Platform Notes
+
+| Platform | Status |
+|---|---|
+| **Windows** | Full support |
+| **macOS** | Grant Accessibility permission for hotkey |
+| **Linux (X11)** | Full support |
+| **WSL2** | Works — global hotkey disabled, use tray menu instead |
+
+---
+
+## Configuration
 
 | Setting | Description |
 |---|---|
 | **API Key** | Your Mistral API key |
 | **Language** | FR / EN / Auto-detect |
-| **Shortcut** | Default: F9 (single key, no modifier needed) |
-| **Silence duration** | How long a pause ends a chunk (0.5–4.0 s) |
-| **Vocabulary** | Custom terms (one per line) for typo correction |
-| **Bibliography** | Paste BibTeX or reference list; used for `\cite{}` commands |
+| **Shortcut** | Default: F9 |
+| **Silence duration** | Pause length before chunk ends (0.5–4.0 s) |
+| **Vocabulary** | Custom terms for typo correction |
+| **Bibliography** | BibTeX for `\cite{}` commands |
 
 ---
 
 ## Architecture
 
 ```
-main.py          — entry point, threading model
+main.py          — Qt app entry point, qasync event loop
+hud.py           — floating PySide6 overlay (always-on-top)
+tray.py          — QSystemTrayIcon + menu
+settings_ui.py   — settings dialog (PySide6)
 pipeline.py      — two-pass state machine (Voxtral → Mistral)
 audio.py         — sounddevice capture + VAD chunking
 api_client.py    — async Mistral API calls (httpx)
 injector.py      — clipboard + Ctrl/Cmd+V text injection
-hud.py           — floating tkinter HUD (draft/final display)
-tray.py          — pystray system tray icon and menu
-prompt.py        — system prompt assembly + command mapping
-settings_store.py — JSON config (~/.config/dictathesis/)
-settings_ui.py   — settings window (tkinter)
+prompt.py        — system prompt assembly
+settings_store.py — JSON config
 ```
 
-## Tech stack
+## Tech Stack
 
 | Component | Library |
 |---|---|
+| GUI / System tray | `PySide6` (Qt) |
+| Async integration | `qasync` |
 | Audio capture | `sounddevice` (PortAudio) |
-| Voice activity detection | Energy VAD (Phase 1) → `webrtcvad` (Phase 3) |
-| 1st pass STT | Mistral Voxtral (`voxtral-mini-latest`) |
-| 2nd pass LLM | Mistral Medium (`mistral-medium-latest`) |
+| Voice activity | `webrtcvad` |
+| 1st pass STT | Mistral Voxtral |
+| 2nd pass LLM | Mistral Medium |
 | Text injection | `pyperclip` + `pynput` |
-| System tray | `pystray` |
-| HUD window | `tkinter` |
-| Global hotkey | `pynput` |
+| Global hotkey | `pynput` (except WSL2) |
 
 ---
 
@@ -103,7 +124,8 @@ settings_ui.py   — settings window (tkinter)
 
 - [x] Phase 1 — Core: F9 → record → Voxtral → inject
 - [x] Phase 2 — Two-pass pipeline + voice commands
-- [x] Phase 3 — VAD chunking + HUD (draft/final display)
-- [ ] Phase 4 — Custom context (bibliography + vocabulary in prompt)
-- [ ] Phase 5 — UX polish (sound feedback, draggable HUD, opacity)
-- [ ] Phase 6 — Equation mode (LaTeX math dictation) + PyInstaller packaging
+- [x] Phase 3 — VAD chunking + HUD
+- [x] Phase 4 — PySide6 migration (cross-platform GUI)
+- [ ] Phase 5 — Custom context (bibliography + vocabulary)
+- [ ] Phase 6 — Equation mode (LaTeX math dictation)
+- [ ] Phase 7 — PyInstaller packaging

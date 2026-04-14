@@ -24,6 +24,11 @@ body {
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
   border-radius: var(--radius) var(--radius) 0 0;
+  cursor: grab;
+}
+
+.titlebar:active {
+  cursor: grabbing;
 }
 
 .titlebar-label {
@@ -78,6 +83,10 @@ body {
 .btn-stop {
   background: #4a2e36;
   color: var(--accent-red);
+}
+
+.btn-icon.pinned {
+  color: var(--accent-blue);
 }
 
 .btn-icon {
@@ -150,6 +159,14 @@ body {
   border-left: 3px solid var(--border);
   opacity: 0.6;
   transition: opacity 0.5s ease;
+}
+
+.chunk-error {
+  color: var(--accent-red);
+  background: #4a2e36;
+  border-left: 3px solid var(--accent-red);
+  white-space: pre-wrap;
+  font-size: 12px;
 }
 
 /* ── Empty state ── */

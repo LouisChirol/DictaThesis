@@ -51,6 +51,7 @@ function createHudWindow(): BrowserWindow {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false, // required for preload require() to work
     },
   });
 
@@ -80,6 +81,7 @@ function createSettingsWindow(): BrowserWindow {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   });
 
@@ -129,7 +131,7 @@ app.whenReady().then(() => {
   sidecar.start();
 
   // Set up IPC bridge
-  setupIpcHandlers(sidecar, hudWindow, settingsWindow, openSettings);
+  setupIpcHandlers(sidecar, hudWindow, settingsWindow, openSettings, quit);
 
   // System tray
   tray = new TrayManager(sidecar, hudWindow, openSettings, quit);

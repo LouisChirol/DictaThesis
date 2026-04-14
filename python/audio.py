@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import io
+import os
 import threading
+import urllib.request
 import wave
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
@@ -27,6 +30,9 @@ CHANNELS = 1
 DTYPE = "int16"
 BLOCK_MS = 30  # ms per audio frame fed to VAD
 BLOCK_SAMPLES = SAMPLE_RATE * BLOCK_MS // 1000  # 480 samples
+SILERO_ONNX_URL = (
+    "https://raw.githubusercontent.com/snakers4/silero-vad/master/src/silero_vad/data/silero_vad.onnx"
+)
 
 
 def _frames_to_wav(frames: list[np.ndarray]) -> bytes:
@@ -80,6 +86,50 @@ class _WebRTCVAD:
             return False
 
 
+class _SileroVAD:
+    def __init__(
+        self,
+        threshold: float = 0.6,
+        model_path: str | None = None,
+    ):
+        import onnxruntime as ort  # noqa: PLC0415
+
+        self._threshold = threshold
+        self._session = ort.InferenceSession(str(self._ensure_model(model_path)))
+        self._state = np.zeros((2, 1, 128), dtype=np.float32)
+        self._context = np.zeros((1, 64), dtype=np.float32)
+
+    def _ensure_model(self, model_path: str | None) -> Path:
+        if model_path:
+            path = Path(model_path).expanduser()
+            if path.exists():
+                return path
+            raise FileNotFoundError(f"Silero model not found: {path}")
+
+        cache_dir = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "dictathesis"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        target = cache_dir / "silero_vad.onnx"
+        if not target.exists():
+            urllib.request.urlretrieve(SILERO_ONNX_URL, target)  # noqa: S310
+        return target
+
+    def is_speech(self, frame: np.ndarray) -> bool:
+        x = frame.astype(np.float32).reshape(1, -1) / 32768.0
+        if x.shape[1] != BLOCK_SAMPLES:
+            return False
+        x_in = np.concatenate([self._context, x], axis=1)
+        self._context = x[:, -64:].copy()
+        inputs = {
+            "input": x_in.astype(np.float32),
+            "state": self._state,
+            "sr": np.array([SAMPLE_RATE], dtype=np.int64),
+        }
+        out, state = self._session.run(None, inputs)
+        self._state = state
+        prob = float(np.squeeze(out))
+        return prob >= self._threshold
+
+
 # ---------------------------------------------------------------------------
 # AudioCapture
 # ---------------------------------------------------------------------------
@@ -104,6 +154,8 @@ class AudioCapture:
         on_chunk: Callable[[bytes], Awaitable[None]],
         loop: asyncio.AbstractEventLoop,
         vad_silence_duration: float = 1.5,
+        max_chunk_duration: float = 12.0,
+        vad_backend: str = "energy",
         vad_mode: int = 2,
         rms_threshold: int = 400,
     ):
@@ -111,8 +163,34 @@ class AudioCapture:
         self._loop = loop
 
         # Choose VAD backend
-        if USE_WEBRTCVAD:
-            self._vad = _WebRTCVAD(mode=vad_mode)
+        backend = (vad_backend or "energy").lower()
+        if backend == "silero":
+            try:
+                self._vad = _SileroVAD()
+                print("[audio] Using Silero ONNX VAD backend")
+            except Exception as e:
+                print(f"[audio] Silero backend unavailable ({e}); trying WebRTC fallback")
+                try:
+                    self._vad = _WebRTCVAD(mode=vad_mode)
+                    print("[audio] Using WebRTC VAD fallback")
+                except Exception as we:
+                    print(f"[audio] WebRTC fallback unavailable ({we}); using Energy VAD")
+                    silence_frames = max(1, int(vad_silence_duration / (BLOCK_MS / 1000)))
+                    self._vad = _EnergyVAD(
+                        rms_threshold=rms_threshold,
+                        silence_frames=silence_frames,
+                    )
+        elif backend == "webrtc" or USE_WEBRTCVAD:
+            try:
+                self._vad = _WebRTCVAD(mode=vad_mode)
+                print("[audio] Using WebRTC VAD backend")
+            except Exception as e:
+                print(f"[audio] WebRTC backend unavailable ({e}); using Energy VAD")
+                silence_frames = max(1, int(vad_silence_duration / (BLOCK_MS / 1000)))
+                self._vad = _EnergyVAD(
+                    rms_threshold=rms_threshold,
+                    silence_frames=silence_frames,
+                )
         else:
             silence_frames = max(1, int(vad_silence_duration / (BLOCK_MS / 1000)))
             self._vad = _EnergyVAD(
@@ -121,9 +199,12 @@ class AudioCapture:
             )
 
         self._silence_limit = max(1, int(vad_silence_duration / (BLOCK_MS / 1000)))
-        self._min_speech_frames = 5  # ~150 ms minimum speech
+        self._max_chunk_frames = max(1, int(max_chunk_duration / (BLOCK_MS / 1000)))
+        self._min_speech_frames = 10  # ~300 ms of voiced audio required
 
         self._speech_frames: list[np.ndarray] = []
+        self._voiced_frames: int = 0
+        self._chunk_frame_count: int = 0
         self._silence_count: int = 0
         self._stream: sd.InputStream | None = None
         self._recording = False
@@ -139,6 +220,8 @@ class AudioCapture:
                 return
             self._recording = True
             self._speech_frames = []
+            self._voiced_frames = 0
+            self._chunk_frame_count = 0
             self._silence_count = 0
             self._stream = sd.InputStream(
                 samplerate=SAMPLE_RATE,
@@ -159,9 +242,11 @@ class AudioCapture:
                 self._stream.close()
                 self._stream = None
             # Flush remaining speech
-            if len(self._speech_frames) >= self._min_speech_frames:
+            if self._voiced_frames >= self._min_speech_frames:
                 self._emit(self._speech_frames.copy())
             self._speech_frames = []
+            self._voiced_frames = 0
+            self._chunk_frame_count = 0
             self._silence_count = 0
 
     # ------------------------------------------------------------------
@@ -181,18 +266,32 @@ class AudioCapture:
 
         if self._vad.is_speech(frame):
             self._speech_frames.append(frame.copy())
+            self._voiced_frames += 1
+            self._chunk_frame_count += 1
             self._silence_count = 0
         else:
             if self._speech_frames:
                 # Keep a few silence frames for natural trailing audio
                 self._speech_frames.append(frame.copy())
                 self._silence_count += 1
+                self._chunk_frame_count += 1
 
                 if self._silence_count >= self._silence_limit:
-                    if len(self._speech_frames) >= self._min_speech_frames:
+                    if self._voiced_frames >= self._min_speech_frames:
                         self._emit(self._speech_frames.copy())
                     self._speech_frames = []
+                    self._voiced_frames = 0
+                    self._chunk_frame_count = 0
                     self._silence_count = 0
+
+        # Hard chunk cut: emit regularly even during long continuous speech.
+        if self._speech_frames and self._chunk_frame_count >= self._max_chunk_frames:
+            if self._voiced_frames >= self._min_speech_frames:
+                self._emit(self._speech_frames.copy())
+            self._speech_frames = []
+            self._voiced_frames = 0
+            self._chunk_frame_count = 0
+            self._silence_count = 0
 
     def _emit(self, frames: list[np.ndarray]):
         """Convert frames to WAV and schedule the async callback on the event loop."""

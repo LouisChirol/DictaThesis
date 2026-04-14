@@ -40,6 +40,8 @@ export interface SettingsData {
   mode: "normal" | "equation";
   shortcut_key: string;
   vad_silence_duration: number;
+  max_chunk_duration: number;
+  vad_backend: "energy" | "webrtc" | "silero";
   vad_mode: number;
   vocabulary: string[];
   bibliography: string;
@@ -54,6 +56,10 @@ export interface DictaThesisAPI {
   saveSettings: (data: Partial<SettingsData>) => void;
   getSettings: () => void;
   loadBibFile: () => Promise<string | null>;
+
+  startDrag: (x: number, y: number) => void;
+  dragging: (x: number, y: number) => void;
+  togglePin: () => Promise<boolean>;
 
   onChunkUpdate: (cb: (data: ChunkUpdateEvent) => void) => void;
   onStatusChange: (cb: (data: StatusChangeEvent) => void) => void;

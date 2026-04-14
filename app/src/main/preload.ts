@@ -11,6 +11,11 @@ contextBridge.exposeInMainWorld("dictaThesis", {
   getSettings: () => ipcRenderer.send("cmd:get_settings"),
   loadBibFile: () => ipcRenderer.invoke("ui:load_bib_file"),
 
+  // Window controls
+  startDrag: (x: number, y: number) => ipcRenderer.send("window:start-drag", x, y),
+  dragging: (x: number, y: number) => ipcRenderer.send("window:dragging", x, y),
+  togglePin: () => ipcRenderer.invoke("window:toggle-pin"),
+
   // Event subscriptions
   onChunkUpdate: (cb: (data: any) => void) => {
     ipcRenderer.on("event:chunk_update", (_e, data) => cb(data));

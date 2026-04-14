@@ -7,6 +7,9 @@ const apiKeyToggle = document.getElementById("api-key-toggle") as HTMLButtonElem
 const shortcutInput = document.getElementById("shortcut-key") as HTMLInputElement;
 const vadSlider = document.getElementById("vad-silence") as HTMLInputElement;
 const vadValue = document.getElementById("vad-silence-value") as HTMLSpanElement;
+const maxChunkSlider = document.getElementById("max-chunk-duration") as HTMLInputElement;
+const maxChunkValue = document.getElementById("max-chunk-duration-value") as HTMLSpanElement;
+const vadBackendSelect = document.getElementById("vad-backend") as HTMLSelectElement;
 const vocabularyArea = document.getElementById("vocabulary") as HTMLTextAreaElement;
 const bibliographyArea = document.getElementById("bibliography") as HTMLTextAreaElement;
 const btnLoadBib = document.getElementById("btn-load-bib") as HTMLButtonElement;
@@ -25,6 +28,10 @@ apiKeyToggle.addEventListener("click", () => {
 
 vadSlider.addEventListener("input", () => {
   vadValue.textContent = `${vadSlider.value}s`;
+});
+
+maxChunkSlider.addEventListener("input", () => {
+  maxChunkValue.textContent = `${maxChunkSlider.value}s`;
 });
 
 // ── Load .bib file ──
@@ -48,6 +55,8 @@ btnSave.addEventListener("click", () => {
     language: languageRadio?.value || "fr",
     shortcut_key: shortcutInput.value.toLowerCase().trim() || "f9",
     vad_silence_duration: parseFloat(vadSlider.value),
+    max_chunk_duration: parseFloat(maxChunkSlider.value),
+    vad_backend: vadBackendSelect.value || "energy",
     vocabulary: vocabularyArea.value
       .split("\n")
       .map((s) => s.trim())
@@ -83,6 +92,9 @@ window.dictaThesis.onSettings((data) => {
 
   vadSlider.value = String(s.vad_silence_duration ?? 1.5);
   vadValue.textContent = `${vadSlider.value}s`;
+  maxChunkSlider.value = String(s.max_chunk_duration ?? 12.0);
+  maxChunkValue.textContent = `${maxChunkSlider.value}s`;
+  vadBackendSelect.value = s.vad_backend || "energy";
 
   vocabularyArea.value = (s.vocabulary || []).join("\n");
   bibliographyArea.value = s.bibliography || "";

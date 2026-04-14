@@ -60,6 +60,8 @@ class Sidecar:
         self._recording = False
         self._enable_hotkey = enable_hotkey
         self._listener = None
+        self._shutdown_requested = False
+        self._reader_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
     # Protocol I/O
@@ -82,7 +84,8 @@ class Sidecar:
             while True:
                 line = await reader.readline()
                 if not line:
-                    break  # stdin closed — Electron exited
+                    print("[sidecar] stdin EOF")
+                    break
                 line = line.decode("utf-8", errors="replace").strip()
                 if not line:
                     continue
@@ -93,8 +96,27 @@ class Sidecar:
                     continue
                 self._handle_command(msg)
         finally:
-            transport.close()
-            self._quit()
+            if self._shutdown_requested:
+                transport.close()
+                self._quit()
+            else:
+                # Unexpected stdin closure can happen transiently under WSL/Electron.
+                # Keep sidecar alive instead of force-quitting immediately.
+                print("[sidecar] stdin closed unexpectedly; staying alive")
+
+    def _on_reader_done(self, task: asyncio.Task):
+        if self._shutdown_requested:
+            return
+        if task.cancelled():
+            print("[sidecar] command reader cancelled; restarting")
+        else:
+            exc = task.exception()
+            if exc:
+                print(f"[sidecar] command reader crashed: {exc}; restarting")
+            else:
+                print("[sidecar] command reader ended; restarting")
+        self._reader_task = self.loop.create_task(self._read_commands())
+        self._reader_task.add_done_callback(self._on_reader_done)
 
     def _handle_command(self, msg: dict):
         cmd = msg.get("cmd")
@@ -109,6 +131,7 @@ class Sidecar:
         elif cmd == "get_settings":
             self._emit({"event": "settings", "data": self._get_all_settings()})
         elif cmd == "quit":
+            self._shutdown_requested = True
             self._quit()
         else:
             print(f"[sidecar] Unknown command: {cmd}")
@@ -116,7 +139,7 @@ class Sidecar:
     def _get_all_settings(self) -> dict:
         keys = [
             "api_key", "language", "mode", "shortcut_key",
-            "vad_silence_duration", "vad_mode", "vocabulary",
+            "vad_silence_duration", "max_chunk_duration", "vad_backend", "vad_mode", "vocabulary",
             "bibliography",
         ]
         return {k: self.settings.get(k) for k in keys}
@@ -147,8 +170,24 @@ class Sidecar:
             self.audio.start()
         except Exception as e:
             self.pipeline.stop_session()
-            self._emit({"event": "error", "message": f"Audio error: {e}"})
-            print(f"[sidecar] Audio error: {e}")
+            # Provide helpful message for common audio issues
+            msg = str(e)
+            if "device" in msg.lower() or "portaudio" in msg.lower():
+                try:
+                    import sounddevice as sd
+                    devices = sd.query_devices()
+                    print(f"[sidecar] Available audio devices:\n{devices}")
+                except Exception:
+                    pass
+                msg = (
+                    f"Audio error: {e}\n"
+                    "No microphone found. On WSL2, install PulseAudio:\n"
+                    "  sudo apt install pulseaudio && pulseaudio --start"
+                )
+            else:
+                msg = f"Audio error: {e}"
+            self._emit({"event": "error", "message": msg})
+            print(f"[sidecar] {msg}")
             return
 
         self._recording = True
@@ -242,8 +281,12 @@ class Sidecar:
                 self._listener.stop()
             except Exception:
                 pass
-        if self.loop and self.loop.is_running():
-            self.loop.call_soon_threadsafe(self.loop.stop)
+        # Cancel pending tasks to avoid "Task was destroyed" warnings
+        if self.loop:
+            for task in asyncio.all_tasks(self.loop):
+                task.cancel()
+            if self.loop.is_running():
+                self.loop.call_soon_threadsafe(self.loop.stop)
 
     def run(self):
         self.loop = asyncio.new_event_loop()
@@ -267,6 +310,8 @@ class Sidecar:
             on_chunk=self.pipeline.on_chunk,
             loop=self.loop,
             vad_silence_duration=self.settings.get("vad_silence_duration"),
+            max_chunk_duration=self.settings.get("max_chunk_duration"),
+            vad_backend=self.settings.get("vad_backend"),
             vad_mode=self.settings.get("vad_mode"),
         )
 
@@ -288,7 +333,8 @@ class Sidecar:
         self._emit({"event": "ready"})
 
         # Start reading commands from stdin
-        self.loop.create_task(self._read_commands())
+        self._reader_task = self.loop.create_task(self._read_commands())
+        self._reader_task.add_done_callback(self._on_reader_done)
         self.loop.run_forever()
 
 

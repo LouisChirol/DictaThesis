@@ -6,8 +6,8 @@
   "scripts": {
     "copy-static": "cp src/renderer/index.html src/renderer/settings.html dist/renderer/ && cp -r src/renderer/styles dist/renderer/",
     "build": "tsc && npm run copy-static",
-    "start": "npm run build && ELECTRON_RUN_AS_NODE= electron .",
-    "dev": "npm run build && ELECTRON_RUN_AS_NODE= electron .",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron .",
     "watch": "tsc -w"
   },
   "devDependencies": {

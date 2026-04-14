@@ -1,60 +1,140 @@
 """
 Text injection at cursor position in the currently focused application.
+
 Strategy: write text to clipboard, simulate Ctrl+V (or Cmd+V on macOS).
 This works universally in any application — Word, TeXStudio, browsers, etc.
+
+WSL2 special handling: uses clip.exe for the Windows clipboard and
+powershell.exe SendKeys for the paste keystroke, since pynput/pyperclip
+only reach X11 apps under WSLg, not native Windows apps.
 """
 
 import platform
+import shutil
+import subprocess
 import threading
 import time
 
-import pyperclip
-from pynput.keyboard import Controller, Key
-
-_kb = Controller()
 _lock = threading.Lock()  # prevent concurrent injections corrupting clipboard
 
+
+def _is_wsl() -> bool:
+    if platform.system() != "Linux":
+        return False
+    try:
+        with open("/proc/version") as f:
+            return "microsoft" in f.read().lower()
+    except OSError:
+        return False
+
+
 IS_MACOS = platform.system() == "Darwin"
-PASTE_MODIFIER = Key.cmd if IS_MACOS else Key.ctrl
+IS_WSL = _is_wsl()
+# Use Windows-native clipboard/paste on WSL2 if clip.exe is available
+USE_WIN_INJECT = IS_WSL and shutil.which("clip.exe") is not None
 
 
 def inject_text(text: str, delay: float = 0.08):
     """
     Inject text at the cursor position of the currently focused app.
     Temporarily overwrites the clipboard, then restores it.
-
-    Args:
-        text: The text to inject.
-        delay: Seconds to wait after clipboard write before simulating paste.
-               Increase if paste doesn't work reliably on slow machines.
     """
     if not text:
         return
 
     with _lock:
         try:
-            saved = _safe_paste()
-            pyperclip.copy(text)
-            time.sleep(delay)
-            _simulate_paste()
-            time.sleep(0.05)
-            if saved is not None:
-                pyperclip.copy(saved)
+            if USE_WIN_INJECT:
+                _inject_windows(text, delay)
+            else:
+                _inject_native(text, delay)
         except Exception as e:
-            # Fail silently — don't crash the pipeline over injection errors
             print(f"[injector] Error: {e}")
 
 
-def _simulate_paste():
-    _kb.press(PASTE_MODIFIER)
-    _kb.press("v")
-    _kb.release("v")
-    _kb.release(PASTE_MODIFIER)
+# ---------------------------------------------------------------------------
+# Windows injection (WSL2 → Windows apps)
+# ---------------------------------------------------------------------------
 
 
-def _safe_paste() -> str | None:
-    """Read current clipboard content, returning None on failure."""
+def _ps_command(script: str, **kwargs) -> subprocess.CompletedProcess:
+    """Run a powershell command with UTF-8 encoding."""
+    return subprocess.run(
+        [
+            "powershell.exe", "-NoProfile", "-Command",
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; " + script,
+        ],
+        **kwargs,
+        timeout=5,
+    )
+
+
+def _inject_windows(text: str, delay: float):
+    """Use powershell Set-Clipboard + SendKeys for Windows-native paste."""
+    # Save current Windows clipboard
+    saved = _win_clipboard_read()
+
+    # Write to Windows clipboard via powershell (proper Unicode support)
+    # Escape single quotes for powershell string
+    escaped = text.replace("'", "''")
+    _ps_command(f"Set-Clipboard -Value '{escaped}'", check=True)
+    time.sleep(delay)
+
+    # Simulate Ctrl+V via powershell SendKeys
+    _ps_command(
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "[System.Windows.Forms.SendKeys]::SendWait('^v')",
+        check=True,
+    )
+    time.sleep(0.05)
+
+    # Restore clipboard
+    if saved is not None:
+        escaped_saved = saved.replace("'", "''")
+        _ps_command(f"Set-Clipboard -Value '{escaped_saved}'", check=False)
+
+
+def _win_clipboard_read() -> str | None:
+    """Read current Windows clipboard content."""
     try:
+        result = _ps_command("Get-Clipboard", capture_output=True)
+        return result.stdout.decode("utf-8", errors="replace").rstrip("\r\n") if result.returncode == 0 else None
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Native injection (Linux X11, macOS, Windows)
+# ---------------------------------------------------------------------------
+
+
+def _inject_native(text: str, delay: float):
+    """Use pyperclip + pynput for native clipboard/keyboard injection."""
+    import pyperclip
+    from pynput.keyboard import Controller, Key
+
+    kb = Controller()
+    paste_mod = Key.cmd if IS_MACOS else Key.ctrl
+
+    saved = _safe_paste_native()
+    pyperclip.copy(text)
+    time.sleep(delay)
+
+    # Simulate Ctrl+V / Cmd+V
+    kb.press(paste_mod)
+    kb.press("v")
+    kb.release("v")
+    kb.release(paste_mod)
+    time.sleep(0.05)
+
+    if saved is not None:
+        pyperclip.copy(saved)
+
+
+def _safe_paste_native() -> str | None:
+    """Read current clipboard content via pyperclip."""
+    try:
+        import pyperclip
         return pyperclip.paste()
     except Exception:
         return None

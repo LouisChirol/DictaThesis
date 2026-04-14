@@ -15,6 +15,8 @@ DEFAULTS = {
     "mode": "normal",  # "normal" | "equation"
     "shortcut_key": "f9",
     "vad_silence_duration": 1.5,  # seconds of silence before chunk emitted
+    "max_chunk_duration": 6.0,  # hard cut for very long utterances
+    "vad_backend": "silero",  # "energy" | "webrtc" | "silero"
     "vad_mode": 2,  # webrtcvad aggressiveness: 0–3
     "vocabulary": [],  # list of custom terms (strings)
     "bibliography": "",  # raw text of bibliography

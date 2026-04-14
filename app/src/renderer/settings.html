@@ -55,6 +55,31 @@
       </div>
     </div>
 
+    <!-- Max Chunk Duration -->
+    <div class="section">
+      <div class="section-title">Maximum Chunk Duration</div>
+      <div class="field">
+        <label>Hard chunk cut even without silence (helps long monologues stream continuously)</label>
+        <div class="slider-wrapper">
+          <input type="range" id="max-chunk-duration" min="3.0" max="30.0" step="0.5" value="12.0" />
+          <span class="slider-value" id="max-chunk-duration-value">12.0s</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- VAD Backend -->
+    <div class="section">
+      <div class="section-title">VAD Backend</div>
+      <div class="field">
+        <label for="vad-backend">Detection engine used to split speech and silence</label>
+        <select id="vad-backend">
+          <option value="energy">Energy (fast, no extra dependency)</option>
+          <option value="webrtc">WebRTC VAD</option>
+          <option value="silero">Silero ONNX VAD</option>
+        </select>
+      </div>
+    </div>
+
     <!-- Custom Vocabulary -->
     <div class="section">
       <div class="section-title">Custom Vocabulary</div>

@@ -11,6 +11,7 @@ app in strict dictation order via an ordered injection queue.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 import uuid
 from collections.abc import Callable
@@ -19,6 +20,18 @@ from enum import Enum
 
 import api_client
 from injector import inject_text
+
+SILENCE_HALLUCINATION_PATTERNS = {
+    "non",
+    "ah",
+    "euh",
+    "hum",
+    "hmm",
+    "merci",
+    "merci beaucoup",
+    "thank you",
+    "thanks",
+}
 
 
 class ChunkState(Enum):
@@ -116,6 +129,18 @@ class Pipeline:
     # Internal pipeline
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _is_silence_hallucination(text: str) -> bool:
+        normalized = re.sub(r"[^\w\s]", " ", text.lower(), flags=re.UNICODE)
+        normalized = " ".join(normalized.split())
+        if not normalized:
+            return True
+        if normalized in SILENCE_HALLUCINATION_PATTERNS:
+            return True
+        # Very short one-token outputs are often silence artifacts.
+        tokens = normalized.split()
+        return len(tokens) == 1 and len(tokens[0]) <= 2
+
     async def _process_chunk(self, chunk: Chunk, wav_bytes: bytes):
         api_key = self._settings.get("api_key")
         language = self._settings.get("language")
@@ -134,6 +159,9 @@ class Pipeline:
 
         if not draft:
             # Silent or empty segment — skip
+            self._signal_finalized(chunk.index, "")
+            return
+        if self._is_silence_hallucination(draft):
             self._signal_finalized(chunk.index, "")
             return
 
@@ -203,8 +231,10 @@ class Pipeline:
                 text = self._finalized.pop(self._next_inject_index)
                 self._next_inject_index += 1
                 if text.strip():
+                    print(f"[pipeline] Injecting chunk {self._next_inject_index - 1}: {text[:60]!r}...")
                     # inject_text is blocking — run in executor
                     await asyncio.get_event_loop().run_in_executor(None, inject_text, text)
+                    print(f"[pipeline] Injection done for chunk {self._next_inject_index - 1}")
 
             # Check if session is done and all chunks injected
             if not self._active and self._next_inject_index >= self._chunk_counter:

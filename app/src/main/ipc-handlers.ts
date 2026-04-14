@@ -11,14 +11,17 @@ export function setupIpcHandlers(
   hudWindow: BrowserWindow,
   settingsWindow: BrowserWindow,
   openSettings: () => void,
+  quitApp: () => void,
 ): void {
   // ── Commands from renderer → sidecar ──
 
   ipcMain.on("cmd:start_dictation", () => {
+    console.log("[ipc] start_dictation");
     sidecar.send({ cmd: "start_dictation" });
   });
 
   ipcMain.on("cmd:stop_dictation", () => {
+    console.log("[ipc] stop_dictation");
     sidecar.send({ cmd: "stop_dictation" });
   });
 
@@ -31,7 +34,8 @@ export function setupIpcHandlers(
   });
 
   ipcMain.on("cmd:quit", () => {
-    sidecar.send({ cmd: "quit" });
+    console.log("[ipc] quit");
+    quitApp();
   });
 
   // ── UI actions ──
@@ -53,6 +57,29 @@ export function setupIpcHandlers(
       }
     }
     return null;
+  });
+
+  // ── Pin toggle (always-on-top) ──
+
+  ipcMain.handle("window:toggle-pin", () => {
+    const pinned = !hudWindow.isAlwaysOnTop();
+    hudWindow.setAlwaysOnTop(pinned, "floating");
+    return pinned;
+  });
+
+  // ── Window drag (fallback for Linux/WSL2) ──
+
+  let dragStart: { x: number; y: number } | null = null;
+
+  ipcMain.on("window:start-drag", (_e, mouseX: number, mouseY: number) => {
+    const [winX, winY] = hudWindow.getPosition();
+    dragStart = { x: mouseX - winX, y: mouseY - winY };
+  });
+
+  ipcMain.on("window:dragging", (_e, mouseX: number, mouseY: number) => {
+    if (dragStart) {
+      hudWindow.setPosition(mouseX - dragStart.x, mouseY - dragStart.y);
+    }
   });
 
   // ── Events from sidecar → renderer windows ──

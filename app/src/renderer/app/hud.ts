@@ -14,15 +14,45 @@ const chunksContainer = document.getElementById("chunks")!;
 const statusBar = document.getElementById("status-bar")!;
 const btnStart = document.getElementById("btn-start") as HTMLButtonElement;
 const btnStop = document.getElementById("btn-stop") as HTMLButtonElement;
+const btnPin = document.getElementById("btn-pin") as HTMLButtonElement;
 const btnSettings = document.getElementById("btn-settings") as HTMLButtonElement;
 const btnQuit = document.getElementById("btn-quit") as HTMLButtonElement;
 
 let hasChunks = false;
 
+// ── Window drag (JS fallback — -webkit-app-region: drag is broken on Linux/WSL) ──
+
+const titlebar = document.querySelector(".titlebar") as HTMLElement;
+let isDragging = false;
+
+titlebar.addEventListener("mousedown", (e: MouseEvent) => {
+  // Only drag from the titlebar itself, not from buttons
+  const target = e.target as HTMLElement;
+  if (target.closest(".titlebar-buttons")) return;
+
+  isDragging = true;
+  window.dictaThesis.startDrag(e.screenX, e.screenY);
+});
+
+document.addEventListener("mousemove", (e: MouseEvent) => {
+  if (isDragging) {
+    window.dictaThesis.dragging(e.screenX, e.screenY);
+  }
+});
+
+document.addEventListener("mouseup", () => {
+  isDragging = false;
+});
+
 // ── Buttons ──
 
 btnStart.addEventListener("click", () => window.dictaThesis.startDictation());
 btnStop.addEventListener("click", () => window.dictaThesis.stopDictation());
+btnPin.addEventListener("click", async () => {
+  const pinned = await window.dictaThesis.togglePin();
+  btnPin.classList.toggle("pinned", pinned);
+  btnPin.title = pinned ? "Always on top (pinned)" : "Not pinned";
+});
 btnSettings.addEventListener("click", () => window.dictaThesis.openSettings());
 btnQuit.addEventListener("click", () => window.dictaThesis.quit());
 
@@ -110,6 +140,14 @@ window.dictaThesis.onStatusChange((data) => {
 });
 
 window.dictaThesis.onError((data) => {
-  setStatus(`Error: ${data.message}`, "idle");
+  setStatus("Error", "idle");
   setRecordingUI(false);
+
+  // Show error in chunks area for visibility
+  clearEmptyState();
+  const el = document.createElement("div");
+  el.className = "chunk chunk-error";
+  el.textContent = data.message;
+  chunksContainer.appendChild(el);
+  chunksContainer.scrollTop = chunksContainer.scrollHeight;
 });

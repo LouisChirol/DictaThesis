@@ -4,7 +4,7 @@
   "description": "Smart voice dictation for thesis writing",
   "main": "dist/main/main.js",
   "scripts": {
-    "copy-static": "cp src/renderer/index.html src/renderer/settings.html dist/renderer/ && cp -r src/renderer/styles dist/renderer/",
+    "copy-static": "shx cp src/renderer/index.html src/renderer/settings.html dist/renderer/ && shx cp -r src/renderer/styles dist/renderer/",
     "build": "tsc && npm run copy-static",
     "start": "npm run build && electron .",
     "dev": "npm run build && electron .",
@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "electron": "^28.3.3",
+    "shx": "^0.4.0",
     "typescript": "^5.5.0"
   }
 }

@@ -32,8 +32,17 @@ import sys
 # ── Redirect stdout to stderr BEFORE any imports that might print ──
 # Keep a handle to the real fd 1 for protocol output.
 _proto_fd = os.dup(1)
+if hasattr(sys.stderr, "reconfigure"):
+    # Force UTF-8 so Electron (which decodes as UTF-8) receives valid text.
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 sys.stdout = sys.stderr  # print() now goes to stderr
-_proto_file = os.fdopen(_proto_fd, "w", buffering=1)  # line-buffered protocol output
+_proto_file = os.fdopen(
+    _proto_fd,
+    "w",
+    buffering=1,
+    encoding="utf-8",
+    errors="replace",
+)  # line-buffered protocol output
 
 from audio import AudioCapture
 from pipeline import Pipeline
@@ -53,6 +62,21 @@ def _is_wsl() -> bool:
 _IS_WSL = _is_wsl()
 
 
+def _configure_windows_event_loop_policy() -> None:
+    """
+    Work around Windows asyncio pipe transport issues on newer Python versions.
+
+    The sidecar relies on stdin/stdout pipes for IPC with Electron; using the
+    selector policy is more stable than proactor for this workload.
+    """
+    if platform.system() != "Windows":
+        return
+    policy_cls = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+    if policy_cls is None:
+        return
+    asyncio.set_event_loop_policy(policy_cls())
+
+
 class Sidecar:
     def __init__(self, *, enable_hotkey: bool = True):
         self.settings = SettingsStore()
@@ -69,54 +93,51 @@ class Sidecar:
 
     def _emit(self, event: dict):
         """Write a JSON event to the protocol stream (fd 1)."""
-        line = json.dumps(event, ensure_ascii=False)
+        # Keep protocol payload ASCII-only to avoid cross-encoding issues on
+        # Windows pipes; JSON escapes are decoded back to Unicode in Electron.
+        line = json.dumps(event, ensure_ascii=True)
         _proto_file.write(line + "\n")
         _proto_file.flush()
 
     async def _read_commands(self):
         """Read JSONL commands from stdin until EOF."""
-        reader = asyncio.StreamReader()
-        transport, _ = await self.loop.connect_read_pipe(
-            lambda: asyncio.StreamReaderProtocol(reader),
-            sys.stdin.buffer if hasattr(sys.stdin, "buffer") else sys.stdin,
-        )
-        try:
-            while True:
-                line = await reader.readline()
-                if not line:
-                    print("[sidecar] stdin EOF")
-                    break
-                line = line.decode("utf-8", errors="replace").strip()
-                if not line:
-                    continue
-                try:
-                    msg = json.loads(line)
-                except json.JSONDecodeError as e:
-                    print(f"[sidecar] Bad JSON from stdin: {e}")
-                    continue
-                self._handle_command(msg)
-        finally:
-            if self._shutdown_requested:
-                transport.close()
-                self._quit()
-            else:
-                # Unexpected stdin closure can happen transiently under WSL/Electron.
-                # Keep sidecar alive instead of force-quitting immediately.
-                print("[sidecar] stdin closed unexpectedly; staying alive")
+        stream = sys.stdin.buffer if hasattr(sys.stdin, "buffer") else sys.stdin
+        while True:
+            # Reading stdin from a worker thread is more reliable than
+            # connect_read_pipe() across Windows/Electron combinations.
+            line = await asyncio.to_thread(stream.readline)
+            if not line:
+                print("[sidecar] stdin EOF")
+                break
+
+            if isinstance(line, bytes):
+                line = line.decode("utf-8", errors="replace")
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError as e:
+                print(f"[sidecar] Bad JSON from stdin: {e}")
+                continue
+            self._handle_command(msg)
 
     def _on_reader_done(self, task: asyncio.Task):
         if self._shutdown_requested:
             return
         if task.cancelled():
-            print("[sidecar] command reader cancelled; restarting")
+            print("[sidecar] command reader cancelled")
+            return
         else:
             exc = task.exception()
             if exc:
-                print(f"[sidecar] command reader crashed: {exc}; restarting")
+                print(f"[sidecar] command reader crashed: {exc}")
             else:
-                print("[sidecar] command reader ended; restarting")
-        self._reader_task = self.loop.create_task(self._read_commands())
-        self._reader_task.add_done_callback(self._on_reader_done)
+                print("[sidecar] command reader ended")
+
+        # If stdin is gone, restarting would just spin in a crash loop.
+        self._quit()
 
     def _handle_command(self, msg: dict):
         cmd = msg.get("cmd")
@@ -140,7 +161,7 @@ class Sidecar:
         keys = [
             "api_key", "language", "mode", "shortcut_key",
             "vad_silence_duration", "max_chunk_duration", "vad_backend", "vad_mode", "vocabulary",
-            "bibliography",
+            "bibliography", "enable_injection",
         ]
         return {k: self.settings.get(k) for k in keys}
 
@@ -339,6 +360,8 @@ class Sidecar:
 
 
 def main():
+    _configure_windows_event_loop_policy()
+
     parser = argparse.ArgumentParser(description="DictaThesis sidecar process")
     parser.add_argument(
         "--no-hotkey",

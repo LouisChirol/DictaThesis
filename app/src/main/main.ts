@@ -38,13 +38,15 @@ const preloadPath = path.join(__dirname, "preload.js");
 
 function createHudWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 420,
-    height: 280,
+    width: 620,
+    height: 420,
+    minWidth: 560,
+    minHeight: 360,
     frame: false,
     transparent: false, // solid bg for cross-platform compat (WSL2/Wayland)
     alwaysOnTop: true,
     resizable: true,
-    skipTaskbar: true,
+    skipTaskbar: false,
     minimizable: false,
     backgroundColor: "#1e1e2e",
     webPreferences: {

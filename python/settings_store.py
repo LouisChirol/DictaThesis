@@ -18,6 +18,7 @@ DEFAULTS = {
     "max_chunk_duration": 6.0,  # hard cut for very long utterances
     "vad_backend": "silero",  # "energy" | "webrtc" | "silero"
     "vad_mode": 2,  # webrtcvad aggressiveness: 0–3
+    "enable_injection": True,  # when false, keep text in HUD without pasting
     "vocabulary": [],  # list of custom terms (strings)
     "bibliography": "",  # raw text of bibliography
     "hud_geometry": "420x220+60+60",

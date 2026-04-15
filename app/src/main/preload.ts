@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld("dictaThesis", {
   startDrag: (x: number, y: number) => ipcRenderer.send("window:start-drag", x, y),
   dragging: (x: number, y: number) => ipcRenderer.send("window:dragging", x, y),
   togglePin: () => ipcRenderer.invoke("window:toggle-pin"),
+  isPinned: () => ipcRenderer.invoke("window:is-pinned"),
+  copyText: (text: string) => ipcRenderer.invoke("clipboard:copy-text", text),
 
   // Event subscriptions
   onChunkUpdate: (cb: (data: any) => void) => {

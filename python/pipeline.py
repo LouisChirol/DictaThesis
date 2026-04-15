@@ -231,10 +231,19 @@ class Pipeline:
                 text = self._finalized.pop(self._next_inject_index)
                 self._next_inject_index += 1
                 if text.strip():
-                    print(f"[pipeline] Injecting chunk {self._next_inject_index - 1}: {text[:60]!r}...")
-                    # inject_text is blocking — run in executor
-                    await asyncio.get_event_loop().run_in_executor(None, inject_text, text)
-                    print(f"[pipeline] Injection done for chunk {self._next_inject_index - 1}")
+                    if self._settings.get("enable_injection"):
+                        print(
+                            f"[pipeline] Injecting chunk {self._next_inject_index - 1}: "
+                            f"{text[:60]!r}..."
+                        )
+                        # inject_text is blocking — run in executor
+                        await asyncio.get_event_loop().run_in_executor(None, inject_text, text)
+                        print(f"[pipeline] Injection done for chunk {self._next_inject_index - 1}")
+                    else:
+                        print(
+                            f"[pipeline] Injection disabled; keeping chunk "
+                            f"{self._next_inject_index - 1} in HUD only"
+                        )
 
             # Check if session is done and all chunks injected
             if not self._active and self._next_inject_index >= self._chunk_counter:

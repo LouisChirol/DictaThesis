@@ -2,7 +2,7 @@
  * Bridges Electron IPC channels (renderer <-> main) to the Python sidecar.
  */
 
-import { ipcMain, dialog, BrowserWindow } from "electron";
+import { ipcMain, dialog, BrowserWindow, clipboard } from "electron";
 import * as fs from "fs";
 import { SidecarManager } from "./sidecar";
 
@@ -65,6 +65,16 @@ export function setupIpcHandlers(
     const pinned = !hudWindow.isAlwaysOnTop();
     hudWindow.setAlwaysOnTop(pinned, "floating");
     return pinned;
+  });
+
+  ipcMain.handle("window:is-pinned", () => hudWindow.isAlwaysOnTop());
+  ipcMain.handle("clipboard:copy-text", (_e, text: string) => {
+    try {
+      clipboard.writeText(text ?? "");
+      return true;
+    } catch {
+      return false;
+    }
   });
 
   // ── Window drag (fallback for Linux/WSL2) ──

@@ -43,6 +43,7 @@ export interface SettingsData {
   max_chunk_duration: number;
   vad_backend: "energy" | "webrtc" | "silero";
   vad_mode: number;
+  enable_injection: boolean;
   vocabulary: string[];
   bibliography: string;
 }
@@ -60,6 +61,8 @@ export interface DictaThesisAPI {
   startDrag: (x: number, y: number) => void;
   dragging: (x: number, y: number) => void;
   togglePin: () => Promise<boolean>;
+  isPinned: () => Promise<boolean>;
+  copyText: (text: string) => Promise<boolean>;
 
   onChunkUpdate: (cb: (data: ChunkUpdateEvent) => void) => void;
   onStatusChange: (cb: (data: StatusChangeEvent) => void) => void;

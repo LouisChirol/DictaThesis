@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+dist/
+build/
+*.egg-info/
+.env
+
+# Node / Electron
+node_modules/
+app/dist/
+app/node_modules/
+app/out/
+
+# OS
+.DS_Store
+Thumbs.db

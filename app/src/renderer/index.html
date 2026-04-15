@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <link rel="stylesheet" href="styles/global.css" />
+  <link rel="stylesheet" href="styles/hud.css" />
+  <title>DictaThesis</title>
+</head>
+<body>
+  <div class="hud">
+    <!-- Title bar (draggable) -->
+    <div class="titlebar">
+      <span class="titlebar-label">DictaThesis</span>
+      <div class="titlebar-buttons">
+        <button id="btn-start" class="btn btn-start">&#9679; Start</button>
+        <button id="btn-stop" class="btn btn-stop" disabled>&#9632; Stop</button>
+        <button id="btn-pin" class="btn btn-icon pinned" title="Always on top (pinned)">&#128204;</button>
+        <button id="btn-settings" class="btn btn-icon" title="Settings">&#9881;</button>
+        <button id="btn-quit" class="btn btn-icon" title="Quit">&times;</button>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <div id="status-bar" class="status-bar">
+      Ready — press Start or F9 to begin dictation
+    </div>
+
+    <!-- Chunks -->
+    <div id="chunks" class="chunks">
+      <div class="empty-state">Transcribed text will appear here</div>
+    </div>
+  </div>
+
+  <script src="app/hud.js"></script>
+</body>
+</html>

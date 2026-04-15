@@ -1,0 +1,68 @@
+/* DictaThesis — Shared CSS variables and reset */
+
+:root {
+  /* Catppuccin Mocha-inspired palette */
+  --bg-base: #1e1e2e;
+  --bg-surface: #262637;
+  --bg-overlay: #2e2e42;
+  --bg-hover: #363650;
+
+  --text-primary: #cdd6f4;
+  --text-secondary: #a6adc8;
+  --text-muted: #6c7086;
+
+  --accent-blue: #89b4fa;
+  --accent-green: #a6e3a1;
+  --accent-red: #f38ba8;
+  --accent-yellow: #f9e2af;
+  --accent-orange: #fab387;
+  --accent-mauve: #cba6f7;
+
+  --draft-text: #f9e2af;
+  --draft-bg: #3a2e00;
+  --final-text: #a6e3a1;
+  --final-bg: #002e1a;
+  --settled-text: #6c7086;
+
+  --border: #45475a;
+  --radius: 10px;
+  --radius-sm: 6px;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}

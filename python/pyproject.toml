@@ -59,8 +59,9 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = [
-    "api_client", "audio", "injector", "pipeline",
-    "prompt", "settings_store", "sidecar",
+    "api_client", "audio", "context_reader", "injector",
+    "pipeline", "platform_utils", "prompt", "settings_store",
+    "sidecar", "text_editor",
 ]
 
 [tool.ruff.format]

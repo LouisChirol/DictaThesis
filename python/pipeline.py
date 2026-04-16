@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import string
 import time
 import uuid
 from collections.abc import Callable
@@ -19,7 +20,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 import api_client
+from context_reader import read_focused_text
 from injector import inject_text
+from text_editor import TextFieldEditor
 
 SILENCE_HALLUCINATION_PATTERNS = {
     "non",
@@ -79,13 +82,16 @@ class Pipeline:
 
         self._chunks: dict[str, Chunk] = {}
         self._session_context: list[str] = []  # rolling last-5 finalized texts
+        self._session_buffer: str = ""  # all text injected/produced this session
+        self._document_prefix: str = ""  # text in the field before dictation started
 
         # Ordered injection: tracks which chunk index to inject next
         self._next_inject_index: int = 0
         self._chunk_counter: int = 0
-        self._finalized: dict[int, str] = {}  # index → final_text (ready to inject)
+        self._finalized: dict[int, dict | str] = {}  # index → result (ready to inject)
         self._inject_event = asyncio.Event()
 
+        self._editor = TextFieldEditor()
         self._active = False
         self._tasks: list[asyncio.Task] = []
 
@@ -96,10 +102,21 @@ class Pipeline:
     def start_session(self):
         self._active = True
         self._session_context = []
+        self._session_buffer = ""
+        self._document_prefix = ""
         self._next_inject_index = 0
         self._chunk_counter = 0
         self._finalized = {}
         self._tasks = []
+        # Try to read existing text from the focused field (best-effort)
+        try:
+            prefix = read_focused_text()
+            if prefix:
+                self._document_prefix = prefix
+                print(f"[pipeline] Read {len(prefix)} chars of document context")
+        except Exception as e:
+            print(f"[pipeline] Context read failed (non-fatal): {e}")
+
         if self._on_state_change:
             self._on_state_change(True)
         # Start the injection worker
@@ -167,6 +184,7 @@ class Pipeline:
 
         chunk.draft_text = draft
         chunk.state = ChunkState.DRAFT
+        print(f"[pipeline] Draft chunk {chunk.index}: {draft[:80]!r}")
 
         if self._on_draft:
             self._on_draft(chunk.id, draft)
@@ -174,22 +192,30 @@ class Pipeline:
         # --- 2nd pass: Mistral LLM ---
         chunk.state = ChunkState.REFINING
         try:
+            # Build document context: prefix (pre-existing text) + session buffer
+            doc_tail = (self._document_prefix[-500:] + self._session_buffer)[-1000:]
             result = await api_client.refine(
-                draft, api_key, self._session_context, self._settings, mode
+                draft, api_key, self._session_context, self._settings, mode,
+                injected_tail=doc_tail[-200:],
             )
             final_text = result.get("full_text") or draft
         except Exception as e:
             print(f"[pipeline] Refinement error for chunk {chunk.id}: {e}")
             final_text = draft  # graceful degradation
+            result = {"segments": [{"type": "text", "content": draft, "command": "none"}],
+                      "full_text": draft, "detected_language": "fr"}
 
-        # Check for stop_dictation command
-        stop_requested = any(
-            seg.get("command") == "stop_dictation"
-            for seg in result.get("segments", [])
-            if isinstance(result, dict)
-        )
+        # Check for control commands (e.g., stop_dictation)
+        commands = self._settings.get("dictation_commands") or []
+        cmd_lookup = {cmd["id"]: cmd for cmd in commands}
+        stop_requested = False
+        for seg in result.get("segments", []):
+            cmd_def = cmd_lookup.get(seg.get("command", "none"))
+            if cmd_def and cmd_def.get("category") == "control":
+                action = cmd_def.get("action", {})
+                if action.get("control") == "stop_dictation":
+                    stop_requested = True
 
-        # Strip any trailing stop command text from final_text
         chunk.final_text = final_text
         chunk.state = ChunkState.FINAL
 
@@ -202,15 +228,15 @@ class Pipeline:
             if len(self._session_context) > 5:
                 self._session_context.pop(0)
 
-        # Signal injection worker
-        self._signal_finalized(chunk.index, final_text)
+        # Signal injection worker with full result for command dispatch
+        self._signal_finalized(chunk.index, result)
 
         if stop_requested:
             self.stop_session()
 
-    def _signal_finalized(self, index: int, text: str):
+    def _signal_finalized(self, index: int, result: dict | str):
         """Mark a chunk as ready for ordered injection."""
-        self._finalized[index] = text
+        self._finalized[index] = result
         # Wake up the injection worker
         loop = asyncio.get_event_loop()
         loop.call_soon_threadsafe(self._inject_event.set)
@@ -218,6 +244,146 @@ class Pipeline:
     # ------------------------------------------------------------------
     # Ordered injection worker
     # ------------------------------------------------------------------
+
+    def _needs_space_before(self, text: str) -> bool:
+        """Check if a space should be prepended before injecting text."""
+        return (
+            bool(self._session_buffer)
+            and self._session_buffer[-1] not in string.whitespace
+            and text[0] not in string.punctuation + string.whitespace
+        )
+
+    async def _inject_with_spacing(self, text: str, idx: int):
+        """Inject text with whitespace heuristic and buffer tracking."""
+        if not text.strip():
+            return
+
+        if self._needs_space_before(text):
+            text = " " + text
+
+        if self._settings.get("enable_injection"):
+            print(f"[pipeline] Injecting chunk {idx}: {text[:60]!r}...")
+            await asyncio.get_event_loop().run_in_executor(None, inject_text, text)
+            print(f"[pipeline] Injection done for chunk {idx}")
+        else:
+            print(f"[pipeline] Injection disabled; keeping chunk {idx} in HUD only")
+
+        self._session_buffer += text
+
+    async def _handle_editing_command(self, cmd_id: str, content: str, action: dict, idx: int):
+        """Execute an editing command using the session buffer and TextFieldEditor."""
+        edit_type = action.get("edit", "")
+        loop = asyncio.get_event_loop()
+
+        if not self._settings.get("enable_injection"):
+            print(f"[pipeline] Editing command '{cmd_id}' skipped (injection disabled)")
+            return
+
+        if edit_type == "delete_previous_sentence":
+            count = TextFieldEditor.find_last_sentence_length(self._session_buffer)
+            if count > 0:
+                print(f"[pipeline] Deleting last sentence ({count} chars)")
+                await loop.run_in_executor(None, self._editor.delete_backwards, count)
+                self._session_buffer = self._session_buffer[:-count]
+            else:
+                print("[pipeline] No sentence to delete in session buffer")
+
+        elif edit_type == "delete_previous_word":
+            count = TextFieldEditor.find_last_word_length(self._session_buffer)
+            if count > 0:
+                print(f"[pipeline] Deleting last word ({count} chars)")
+                await loop.run_in_executor(None, self._editor.delete_backwards, count)
+                self._session_buffer = self._session_buffer[:-count]
+            else:
+                print("[pipeline] No word to delete in session buffer")
+
+        elif edit_type == "correct_word":
+            # content should contain the word to correct; the LLM's full_text
+            # should contain the corrected version — but for segment-based dispatch,
+            # we need the replacement from the next text segment or from content itself
+            word = content.strip()
+            if not word:
+                print("[pipeline] Correct word: no word specified")
+                return
+            result = TextFieldEditor.find_word_offset(self._session_buffer, word)
+            if result:
+                offset_from_end, length = result
+                # For now, just delete the word — the LLM's full_text handles replacement
+                print(f"[pipeline] Found '{word}' at offset {offset_from_end} from end")
+                # Select from current position back to the word, then the word itself
+                await loop.run_in_executor(
+                    None, self._editor.delete_backwards, offset_from_end
+                )
+                # Re-inject everything after the deleted word
+                remaining = self._session_buffer[:-offset_from_end] if offset_from_end > 0 else ""
+                self._session_buffer = remaining
+            else:
+                print(f"[pipeline] Word '{word}' not found in session buffer")
+
+        else:
+            print(f"[pipeline] Unknown editing command: {edit_type}")
+
+    async def _dispatch_result(self, result: dict | str, idx: int):
+        """Dispatch a finalized result — either plain text or structured LLM response."""
+        if isinstance(result, str):
+            await self._inject_with_spacing(result, idx)
+            return
+
+        commands = self._settings.get("dictation_commands") or []
+        cmd_lookup = {cmd["id"]: cmd for cmd in commands}
+        segments = result.get("segments", [])
+
+        # Check if any segment is an editing or llm_instructed command
+        has_special_commands = any(
+            cmd_lookup.get(seg.get("command", "none"), {}).get("category")
+            in ("editing", "llm_instructed")
+            for seg in segments
+        )
+
+        if not has_special_commands:
+            # Standard case: use full_text directly (LLM already applied formatting commands)
+            full_text = result.get("full_text", "")
+            await self._inject_with_spacing(full_text, idx)
+            return
+
+        # Special commands present — process segments individually
+        for seg in segments:
+            cmd_id = seg.get("command", "none")
+            content = seg.get("content", "")
+            cmd_def = cmd_lookup.get(cmd_id)
+
+            if seg.get("type") == "text" or cmd_id == "none":
+                if content:
+                    await self._inject_with_spacing(content, idx)
+                continue
+
+            if not cmd_def:
+                if content:
+                    await self._inject_with_spacing(content, idx)
+                continue
+
+            category = cmd_def.get("category", "")
+            action = cmd_def.get("action", {})
+
+            if category == "formatting":
+                text = action.get("text", content)
+                if "__N__" in text:
+                    text = text.replace("__N__", content)
+                await self._inject_with_spacing(text, idx)
+
+            elif category == "control":
+                pass  # handled in _process_chunk
+
+            elif category == "editing":
+                await self._handle_editing_command(cmd_id, content, action, idx)
+
+            elif category == "llm_instructed":
+                # The LLM should have applied the instruction in full_text
+                # Use full_text for the whole result instead of segment-by-segment
+                full_text = result.get("full_text", "")
+                if full_text:
+                    await self._inject_with_spacing(full_text, idx)
+                break  # full_text covers the entire result
 
     async def _injection_worker(self):
         """
@@ -228,22 +394,10 @@ class Pipeline:
         while True:
             # Inject everything that's ready in order
             while self._next_inject_index in self._finalized:
-                text = self._finalized.pop(self._next_inject_index)
+                result = self._finalized.pop(self._next_inject_index)
+                idx = self._next_inject_index
                 self._next_inject_index += 1
-                if text.strip():
-                    if self._settings.get("enable_injection"):
-                        print(
-                            f"[pipeline] Injecting chunk {self._next_inject_index - 1}: "
-                            f"{text[:60]!r}..."
-                        )
-                        # inject_text is blocking — run in executor
-                        await asyncio.get_event_loop().run_in_executor(None, inject_text, text)
-                        print(f"[pipeline] Injection done for chunk {self._next_inject_index - 1}")
-                    else:
-                        print(
-                            f"[pipeline] Injection disabled; keeping chunk "
-                            f"{self._next_inject_index - 1} in HUD only"
-                        )
+                await self._dispatch_result(result, idx)
 
             # Check if session is done and all chunks injected
             if not self._active and self._next_inject_index >= self._chunk_counter:

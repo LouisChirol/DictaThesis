@@ -157,6 +157,11 @@ body {
   color: var(--accent-orange);
 }
 
+.status-bar.cursor-mode {
+  color: var(--accent-blue);
+  font-style: italic;
+}
+
 /* ── Chunk display area ── */
 
 .chunks {

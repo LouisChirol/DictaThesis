@@ -11,7 +11,7 @@ import json
 
 import httpx
 
-from prompt import RESPONSE_SCHEMA, build_prompt
+from prompt import build_prompt, build_response_schema
 
 BASE_URL = "https://api.mistral.ai/v1"
 TRANSCRIPTION_MODEL = "voxtral-mini-latest"
@@ -58,6 +58,7 @@ async def refine(
     session_context: list[str],
     settings,
     mode: str = "normal",
+    injected_tail: str = "",
 ) -> dict:
     """
     Send a draft transcription through the 2nd-pass LLM for smart refinement.
@@ -66,7 +67,14 @@ async def refine(
     On any error, returns a minimal dict using the raw draft text so the
     pipeline can fall back gracefully.
     """
-    system_prompt, user_message = build_prompt(draft_text, session_context, settings, mode)
+    system_prompt, user_message = build_prompt(
+        draft_text, session_context, settings, mode, injected_tail=injected_tail
+    )
+
+    # Build schema dynamically from current command definitions
+    commands = settings.get("dictation_commands") or []
+    command_ids = [cmd["id"] for cmd in commands]
+    response_schema = build_response_schema(command_ids)
 
     payload = {
         "model": REFINEMENT_MODEL,
@@ -80,7 +88,7 @@ async def refine(
             "json_schema": {
                 "name": "DictaThesisOutput",
                 "strict": True,
-                "schema": RESPONSE_SCHEMA,
+                "schema": response_schema,
             },
         },
     }

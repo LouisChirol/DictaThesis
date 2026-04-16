@@ -201,12 +201,23 @@ function updateInsertButton(): void {
   btnInsert.textContent = insertionEnabled ? "Insert ON" : "Insert OFF";
   btnInsert.title = insertionEnabled
     ? "Cursor insertion enabled"
-    : "Cursor insertion disabled";
+    : "Cursor insertion disabled (cursor mode)";
+
+  // Update status bar if we're recording in cursor mode
+  if (!insertionEnabled && !btnStart.disabled === false) {
+    statusBar.classList.toggle("cursor-mode", true);
+  } else {
+    statusBar.classList.toggle("cursor-mode", false);
+  }
 }
 
 function setStatus(message: string, status: "idle" | "recording" | "processing"): void {
   statusBar.textContent = message;
   statusBar.className = `status-bar ${status}`;
+  if (!insertionEnabled && status === "recording") {
+    statusBar.classList.add("cursor-mode");
+    statusBar.textContent = message + " (cursor mode — not inserting)";
+  }
 }
 
 function setRecordingUI(recording: boolean): void {

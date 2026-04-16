@@ -9,29 +9,13 @@ powershell.exe SendKeys for the paste keystroke, since pynput/pyperclip
 only reach X11 apps under WSLg, not native Windows apps.
 """
 
-import platform
-import shutil
 import subprocess
 import threading
 import time
 
+from platform_utils import IS_MACOS, USE_WIN_INJECT
+
 _lock = threading.Lock()  # prevent concurrent injections corrupting clipboard
-
-
-def _is_wsl() -> bool:
-    if platform.system() != "Linux":
-        return False
-    try:
-        with open("/proc/version") as f:
-            return "microsoft" in f.read().lower()
-    except OSError:
-        return False
-
-
-IS_MACOS = platform.system() == "Darwin"
-IS_WSL = _is_wsl()
-# Use Windows-native clipboard/paste on WSL2 if clip.exe is available
-USE_WIN_INJECT = IS_WSL and shutil.which("clip.exe") is not None
 
 
 def inject_text(text: str, delay: float = 0.08):
@@ -90,8 +74,7 @@ def _inject_windows(text: str, delay: float):
 
     # Restore clipboard
     if saved is not None:
-        escaped_saved = saved.replace("'", "''")
-        _ps_command(f"Set-Clipboard -Value '{escaped_saved}'", check=False)
+        _win_clipboard_write(saved)
 
 
 def _win_clipboard_read() -> str | None:
@@ -101,6 +84,18 @@ def _win_clipboard_read() -> str | None:
         return result.stdout.decode("utf-8", errors="replace").rstrip("\r\n") if result.returncode == 0 else None
     except Exception:
         return None
+
+
+def _win_clipboard_write(text: str):
+    """Write clipboard safely, including empty-string restoration."""
+    try:
+        if text == "":
+            _ps_command("Set-Clipboard -Value ([string]::Empty)", check=False)
+            return
+        escaped = text.replace("'", "''")
+        _ps_command(f"Set-Clipboard -Value '{escaped}'", check=False)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------

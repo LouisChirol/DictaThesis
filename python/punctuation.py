@@ -9,6 +9,8 @@ is replaced with the intended punctuation character.
 Example with magic_word="top":
   STT:   "C'est une phrase. Que je veux continuer top point le modèle top ."
   Out:   "C'est une phrase Que je veux continuer. le modèle."
+
+STT often inserts commas between words ("top, period"); those are tolerated.
 """
 
 from __future__ import annotations
@@ -75,17 +77,20 @@ def preprocess_punctuation(
         return draft
 
     alt_pattern = "|".join(alternatives)
-    # Match magic_word (case-insensitive, tolerant of minor STT variations)
-    # followed by whitespace and a trigger/punct
+    # Match magic_word (case-insensitive) then optional STT junk (spaces /
+    # commas / periods STT often inserts), then a trigger word or punct char.
+    # e.g. "top period", "top, period", "top, period,"
     magic_escaped = re.escape(magic_lower)
+    sep = r"[\s.,:;!?]*"
     pattern = re.compile(
-        rf"(?i)\b{magic_escaped}\b\s*({alt_pattern})",
+        rf"(?i)\b{magic_escaped}\b{sep}({alt_pattern})",
         re.UNICODE,
     )
 
-    # Phase 1: Replace magic_word + trigger/punct with a placeholder
-    # Use a unique marker unlikely to appear in text
-    MARKER = "\x00PUNCT:"
+    # Phase 1: Replace magic_word + trigger/punct with a placeholder.
+    # Marker must NOT contain any AUTO_PUNCT_CHARS (those are stripped in phase 2).
+    MARKER_PREFIX = "\x00P"
+    MARKER_SUFFIX = "\x00"
     counter = 0
     protected: dict[str, str] = {}
 
@@ -96,7 +101,7 @@ def preprocess_punctuation(
         punct = trigger_map.get(matched_trigger) or punct_identity.get(matched_trigger, "")
         if not punct:
             return m.group(0)  # no match, leave as-is
-        key = f"{MARKER}{counter}\x00"
+        key = f"{MARKER_PREFIX}{counter}{MARKER_SUFFIX}"
         protected[key] = punct
         counter += 1
         return key

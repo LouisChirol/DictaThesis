@@ -22,6 +22,7 @@ from enum import Enum
 import api_client
 from context_reader import read_focused_text
 from injector import inject_text
+from punctuation import preprocess_punctuation
 from text_editor import TextFieldEditor
 
 SILENCE_HALLUCINATION_PATTERNS = {
@@ -185,6 +186,15 @@ class Pipeline:
         chunk.draft_text = draft
         chunk.state = ChunkState.DRAFT
         print(f"[pipeline] Draft chunk {chunk.index}: {draft[:80]!r}")
+
+        # --- Punctuation pre-processing (optional) ---
+        if self._settings.get("strip_auto_punctuation"):
+            magic_word = self._settings.get("magic_word") or "top"
+            commands = self._settings.get("dictation_commands") or []
+            draft_cleaned = preprocess_punctuation(draft, magic_word, commands)
+            if draft_cleaned != draft:
+                print(f"[pipeline] Cleaned punctuation: {draft_cleaned[:80]!r}")
+                draft = draft_cleaned
 
         if self._on_draft:
             self._on_draft(chunk.id, draft)

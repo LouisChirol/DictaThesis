@@ -13,6 +13,8 @@ const vadBackendSelect = document.getElementById("vad-backend") as HTMLSelectEle
 const vocabularyArea = document.getElementById("vocabulary") as HTMLTextAreaElement;
 const bibliographyArea = document.getElementById("bibliography") as HTMLTextAreaElement;
 const btnLoadBib = document.getElementById("btn-load-bib") as HTMLButtonElement;
+const stripAutoPunctCheck = document.getElementById("strip-auto-punctuation") as HTMLInputElement;
+const magicWordInput = document.getElementById("magic-word") as HTMLInputElement;
 const btnSave = document.getElementById("btn-save") as HTMLButtonElement;
 const toast = document.getElementById("toast") as HTMLDivElement;
 
@@ -62,6 +64,8 @@ btnSave.addEventListener("click", () => {
       .map((s) => s.trim())
       .filter(Boolean),
     bibliography: bibliographyArea.value,
+    strip_auto_punctuation: stripAutoPunctCheck.checked,
+    magic_word: magicWordInput.value.trim() || "top",
   };
 
   window.dictaThesis.saveSettings(data);
@@ -98,6 +102,9 @@ window.dictaThesis.onSettings((data) => {
 
   vocabularyArea.value = (s.vocabulary || []).join("\n");
   bibliographyArea.value = s.bibliography || "";
+
+  stripAutoPunctCheck.checked = s.strip_auto_punctuation ?? false;
+  magicWordInput.value = s.magic_word || "top";
 });
 
 // Request settings on load

@@ -46,6 +46,8 @@ export interface SettingsData {
   enable_injection: boolean;
   vocabulary: string[];
   bibliography: string;
+  strip_auto_punctuation: boolean;
+  magic_word: string;
 }
 
 // API exposed to renderer via contextBridge

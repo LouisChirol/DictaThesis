@@ -168,6 +168,30 @@ body {
   accent-color: var(--accent-blue);
 }
 
+/* ── Checkbox ── */
+
+.checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px !important;
+  color: var(--text-primary) !important;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  accent-color: var(--accent-blue);
+  width: 16px;
+  height: 16px;
+}
+
+.field .hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 4px;
+}
+
 /* ── Slider ── */
 
 .slider-wrapper {

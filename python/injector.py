@@ -45,7 +45,9 @@ def _ps_command(script: str, **kwargs) -> subprocess.CompletedProcess:
     """Run a powershell command with UTF-8 encoding."""
     return subprocess.run(
         [
-            "powershell.exe", "-NoProfile", "-Command",
+            "powershell.exe",
+            "-NoProfile",
+            "-Command",
             "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; " + script,
         ],
         **kwargs,
@@ -81,7 +83,11 @@ def _win_clipboard_read() -> str | None:
     """Read current Windows clipboard content."""
     try:
         result = _ps_command("Get-Clipboard", capture_output=True)
-        return result.stdout.decode("utf-8", errors="replace").rstrip("\r\n") if result.returncode == 0 else None
+        return (
+            result.stdout.decode("utf-8", errors="replace").rstrip("\r\n")
+            if result.returncode == 0
+            else None
+        )
     except Exception:
         return None
 
@@ -130,6 +136,7 @@ def _safe_paste_native() -> str | None:
     """Read current clipboard content via pyperclip."""
     try:
         import pyperclip
+
         return pyperclip.paste()
     except Exception:
         return None

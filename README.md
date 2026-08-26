@@ -9,11 +9,13 @@ Works in **any** application: Google Docs, Word, Overleaf, TeXStudio, email, VSC
 ## How it works
 
 1. Press **F9** (configurable) to start dictation
-2. Speak naturally — sentences are detected automatically
-3. **1st pass**: Voxtral transcribes each sentence and shows it in the HUD immediately
-4. **2nd pass**: Mistral Medium refines the text, fixes typos using your custom vocabulary, and interprets voice commands
+2. Speak your paper naturally — punctuation is inferred, not dictated word-by-word
+3. **1st pass**: Voxtral Mini Transcribe 2 transcribes each chunk (vocabulary via `context_bias`)
+4. **2nd pass**: Mistral Medium refines into thesis register, adds smart punctuation, and handles voice commands
 5. The refined text is injected into whatever app is focused
 6. Press **F9** again (or click Stop in the HUD) to end
+
+Speak full sentences. You do **not** need to say "point" or "virgule" — the system adds French/English academic punctuation. Use distinctive phrases only for structure and editing (see below).
 
 ---
 
@@ -21,17 +23,20 @@ Works in **any** application: Google Docs, Word, Overleaf, TeXStudio, email, VSC
 
 | Say | Result |
 |---|---|
-| "point" / "period" | `.` |
-| "virgule" / "comma" | `,` |
-| "à la ligne" / "new line" | line break |
 | "nouveau paragraphe" / "new paragraph" | paragraph break |
 | "titre un" / "heading one" | `# ` prefix |
 | "titre deux" / "heading two" | `## ` prefix |
 | "référence numéro 3" / "reference number 3" | `\cite{ref3}` |
-| "gras" / "bold" | `**...**` |
-| "italique" / "italic" | `_..._` |
-| "début équation" / "start equation" | switch to equation mode |
+| "ouvrir parenthèse" / "open parenthesis" | `(` |
+| "fermer parenthèse" / "close parenthesis" | `)` |
+| "ouvrir guillemet" / "open quote" | `«` |
+| "fermer guillemet" / "close quote" | `»` |
+| "annuler la phrase précédente" / "delete previous sentence" | undo last sentence |
+| "supprimer le mot précédent" / "delete previous word" | undo last word |
+| "début équation" / "start equation" | `$` |
 | "arrêter la dictée" / "stop dictation" | end session |
+
+The HUD also has one-click chips for `( )` and `« »` when you prefer not to speak delimiters.
 
 ---
 
@@ -90,7 +95,7 @@ Or edit directly: `~/.config/dictathesis/config.json` (Linux/macOS) or `%APPDATA
 | **Language** | FR / EN / Auto-detect |
 | **Shortcut** | Default: F9 |
 | **Silence duration** | Pause length before chunk ends (0.5–4.0 s) |
-| **Vocabulary** | Custom terms for typo correction |
+| **Vocabulary** | Custom terms — `context_bias` for STT + refinement in Medium |
 | **Bibliography** | BibTeX for `\cite{}` commands |
 
 ---
@@ -101,12 +106,14 @@ Or edit directly: `~/.config/dictathesis/config.json` (Linux/macOS) or `%APPDATA
 DictaThesis/
   python/                    # Python backend (sidecar process)
     sidecar.py               — headless IPC bridge (stdin/stdout JSONL)
-    pipeline.py              — two-pass state machine (Voxtral → Mistral)
+    pipeline.py              — two-pass state machine (Voxtral Mini → Medium)
     audio.py                 — sounddevice capture + VAD chunking
     api_client.py            — async Mistral API calls (httpx)
     injector.py              — clipboard + Ctrl/Cmd+V text injection
-    prompt.py                — system prompt assembly
+    prompt.py                — STT + refinement prompt assembly
     settings_store.py        — JSON config
+    context_reader.py        — focused-field context at session start
+    text_editor.py           — backspace-based editing commands
 
   app/                       # Electron frontend
     src/main/
@@ -129,8 +136,8 @@ DictaThesis/
 |---|---|
 | Desktop shell | Electron (TypeScript) |
 | Audio capture | `sounddevice` (PortAudio) |
-| Voice activity | `webrtcvad` / energy VAD |
-| 1st pass STT | Mistral Voxtral |
+| Voice activity | Silero / WebRTC / energy VAD |
+| 1st pass STT | Voxtral Mini Transcribe 2 |
 | 2nd pass LLM | Mistral Medium |
 | Text injection | `pyperclip` + `pynput` |
 | Global hotkey | Electron `globalShortcut` |
@@ -143,6 +150,7 @@ DictaThesis/
 - [x] Phase 2 — Two-pass pipeline + voice commands
 - [x] Phase 3 — VAD chunking + HUD
 - [x] Phase 4 — Electron migration (cross-platform GUI)
-- [ ] Phase 5 — Custom context (bibliography + vocabulary)
+- [x] Phase 5 — Custom context (bibliography + vocabulary in STT + refine)
 - [ ] Phase 6 — Equation mode (LaTeX math dictation)
 - [ ] Phase 7 — Packaging (PyInstaller + Electron Forge)
+- [ ] Phase 8 — Realtime Voxtral streaming HUD

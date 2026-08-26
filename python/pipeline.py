@@ -2,10 +2,11 @@
 Two-pass dictation pipeline.
 
 Each audio chunk goes through:
-  RECEIVED → TRANSCRIBING (Voxtral) → DRAFT → REFINING (Mistral) → FINAL → INJECTED
+  RECEIVED → TRANSCRIBING (Voxtral Mini) → DRAFT → REFINING (batched Medium) → FINAL → INJECTED
 
-Chunks are processed in parallel (asyncio tasks) but injected into the target
-app in strict dictation order via an ordered injection queue.
+STT runs per chunk in parallel. Refinement batches consecutive drafts (debounced) so
+punctuation and phrasing span chunk boundaries. Injection is strictly ordered; slow
+refinement falls back to draft text after timeouts so later chunks are not blocked.
 """
 
 from __future__ import annotations
@@ -22,7 +23,6 @@ from enum import Enum
 import api_client
 from context_reader import read_focused_text
 from injector import inject_text
-from punctuation import preprocess_punctuation
 from text_editor import TextFieldEditor
 
 SILENCE_HALLUCINATION_PATTERNS = {
@@ -36,6 +36,14 @@ SILENCE_HALLUCINATION_PATTERNS = {
     "thank you",
     "thanks",
 }
+
+DELIMITER_PAIRS = (("(", ")"), ("«", "»"), ("[", "]"))
+
+# Refinement batching and timeout tuning
+REFINE_TIMEOUT_S = 5.0
+HEAD_BLOCK_TIMEOUT_S = 3.0
+REFINE_BATCH_MAX_CHUNKS = 4
+REFINE_BATCH_DEBOUNCE_S = 0.6
 
 
 class ChunkState(Enum):
@@ -82,6 +90,7 @@ class Pipeline:
         self._on_state_change = on_state_change
 
         self._chunks: dict[str, Chunk] = {}
+        self._index_to_chunk: dict[int, Chunk] = {}
         self._session_context: list[str] = []  # rolling last-5 finalized texts
         self._session_buffer: str = ""  # all text injected/produced this session
         self._document_prefix: str = ""  # text in the field before dictation started
@@ -91,6 +100,11 @@ class Pipeline:
         self._chunk_counter: int = 0
         self._finalized: dict[int, dict | str] = {}  # index → result (ready to inject)
         self._inject_event = asyncio.Event()
+
+        # Batched refinement queue (index → chunk with draft, waiting for pass 2)
+        self._draft_ready: dict[int, Chunk] = {}
+        self._refine_event = asyncio.Event()
+        self._refine_lock = asyncio.Lock()
 
         self._editor = TextFieldEditor()
         self._active = False
@@ -108,8 +122,9 @@ class Pipeline:
         self._next_inject_index = 0
         self._chunk_counter = 0
         self._finalized = {}
+        self._draft_ready = {}
+        self._index_to_chunk = {}
         self._tasks = []
-        # Try to read existing text from the focused field (best-effort)
         try:
             prefix = read_focused_text()
             if prefix:
@@ -120,13 +135,37 @@ class Pipeline:
 
         if self._on_state_change:
             self._on_state_change(True)
-        # Start the injection worker
-        self._inject_task = asyncio.get_event_loop().create_task(self._injection_worker())
+        loop = asyncio.get_event_loop()
+        self._inject_task = loop.create_task(self._injection_worker())
+        self._refine_task = loop.create_task(self._refine_worker())
 
     def stop_session(self):
         self._active = False
+        self._refine_event.set()
         if self._on_state_change:
             self._on_state_change(False)
+
+    def inject_literal(self, text: str) -> None:
+        """Inject literal text from HUD quick-insert menu (outside chunk flow)."""
+        if not text:
+            return
+        if self._settings.get("enable_injection"):
+            inject_text(text)
+        self._session_buffer += text
+
+    def clear_context(self) -> None:
+        """Clear session memory used for STT/LLM continuity (not pasted document text)."""
+        self._session_buffer = ""
+        self._session_context = []
+        self._document_prefix = ""
+        try:
+            prefix = read_focused_text()
+            if prefix:
+                self._document_prefix = prefix
+                print(f"[pipeline] Re-read {len(prefix)} chars of document context after clear")
+        except Exception as e:
+            print(f"[pipeline] Context re-read after clear failed (non-fatal): {e}")
+        print("[pipeline] Session context cleared")
 
     # ------------------------------------------------------------------
     # Entry point for audio chunks
@@ -139,6 +178,7 @@ class Pipeline:
 
         chunk = Chunk(index=index)
         self._chunks[chunk.id] = chunk
+        self._index_to_chunk[index] = chunk
 
         task = asyncio.get_event_loop().create_task(self._process_chunk(chunk, wav_bytes))
         self._tasks.append(task)
@@ -146,6 +186,21 @@ class Pipeline:
     # ------------------------------------------------------------------
     # Internal pipeline
     # ------------------------------------------------------------------
+
+    def _document_tail(self, max_chars: int = 1000) -> str:
+        return (self._document_prefix[-500:] + self._session_buffer)[-max_chars:]
+
+    def _injected_tail(self, max_chars: int = 200) -> str:
+        return self._document_tail(max_chars=max_chars)[-max_chars:]
+
+    @staticmethod
+    def _compute_open_delimiters(buffer: str) -> list[str]:
+        """Return delimiter characters that are still open in the session buffer."""
+        open_chars: list[str] = []
+        for open_ch, close_ch in DELIMITER_PAIRS:
+            if buffer.count(open_ch) > buffer.count(close_ch):
+                open_chars.append(open_ch)
+        return open_chars
 
     @staticmethod
     def _is_silence_hallucination(text: str) -> bool:
@@ -155,20 +210,26 @@ class Pipeline:
             return True
         if normalized in SILENCE_HALLUCINATION_PATTERNS:
             return True
-        # Very short one-token outputs are often silence artifacts.
         tokens = normalized.split()
         return len(tokens) == 1 and len(tokens[0]) <= 2
 
     async def _process_chunk(self, chunk: Chunk, wav_bytes: bytes):
         api_key = self._settings.get("api_key")
         language = self._settings.get("language")
-        mode = self._settings.get("mode")
+        lang_hint = language if language != "auto" else "fr"
+        injected_tail = self._injected_tail()
+        vocabulary = self._settings.get("vocabulary") or []
 
-        # --- 1st pass: Voxtral ---
+        # --- 1st pass: Voxtral Mini Transcribe ---
         chunk.state = ChunkState.TRANSCRIBING
         try:
-            lang_hint = language if language != "auto" else "fr"
-            draft = await api_client.transcribe(wav_bytes, api_key, lang_hint)
+            draft = await api_client.transcribe(
+                wav_bytes,
+                api_key,
+                lang_hint,
+                injected_tail=injected_tail,
+                vocabulary=vocabulary,
+            )
         except Exception as e:
             print(f"[pipeline] Transcription error for chunk {chunk.id}: {e}")
             chunk.state = ChunkState.ERROR
@@ -176,7 +237,6 @@ class Pipeline:
             return
 
         if not draft:
-            # Silent or empty segment — skip
             self._signal_finalized(chunk.index, "")
             return
         if self._is_silence_hallucination(draft):
@@ -187,67 +247,173 @@ class Pipeline:
         chunk.state = ChunkState.DRAFT
         print(f"[pipeline] Draft chunk {chunk.index}: {draft[:80]!r}")
 
-        # --- Punctuation pre-processing (optional) ---
-        if self._settings.get("strip_auto_punctuation"):
-            magic_word = self._settings.get("magic_word") or "top"
-            commands = self._settings.get("dictation_commands") or []
-            draft_cleaned = preprocess_punctuation(draft, magic_word, commands)
-            if draft_cleaned != draft:
-                print(f"[pipeline] Cleaned punctuation: {draft_cleaned[:80]!r}")
-                draft = draft_cleaned
-
         if self._on_draft:
             self._on_draft(chunk.id, draft)
 
-        # --- 2nd pass: Mistral LLM ---
+        # Queue for batched pass-2 refinement
         chunk.state = ChunkState.REFINING
-        try:
-            # Build document context: prefix (pre-existing text) + session buffer
-            doc_tail = (self._document_prefix[-500:] + self._session_buffer)[-1000:]
-            result = await api_client.refine(
-                draft, api_key, self._session_context, self._settings, mode,
-                injected_tail=doc_tail[-200:],
+        self._draft_ready[chunk.index] = chunk
+        self._refine_event.set()
+
+    @staticmethod
+    def _join_drafts(texts: list[str]) -> str:
+        parts = [t.strip() for t in texts if t and t.strip()]
+        return " ".join(parts)
+
+    def _draft_fallback_result(self, draft_text: str) -> dict:
+        return {
+            "segments": [{"type": "text", "content": draft_text, "command": "none"}],
+            "full_text": draft_text,
+            "detected_language": "fr",
+        }
+
+    async def _refine_worker(self):
+        """Batch consecutive drafts and run a single Medium refinement per batch."""
+        while True:
+            if not self._draft_ready:
+                if not self._active:
+                    break
+                self._refine_event.clear()
+                await self._refine_event.wait()
+                continue
+
+            debounce = 0.0 if not self._active else REFINE_BATCH_DEBOUNCE_S
+            if debounce > 0:
+                await asyncio.sleep(debounce)
+
+            async with self._refine_lock:
+                if not self._draft_ready:
+                    continue
+
+                indices = sorted(self._draft_ready.keys())
+                start = indices[0]
+                while start in self._finalized:
+                    self._draft_ready.pop(start, None)
+                    start += 1
+
+                batch_indices: list[int] = []
+                for i in range(start, start + REFINE_BATCH_MAX_CHUNKS):
+                    if i in self._draft_ready:
+                        batch_indices.append(i)
+                    else:
+                        break
+
+                if not batch_indices:
+                    continue
+
+                chunks = [self._draft_ready.pop(i) for i in batch_indices]
+                combined_draft = self._join_drafts([c.draft_text or "" for c in chunks])
+                if not combined_draft:
+                    for idx in batch_indices:
+                        self._signal_finalized(idx, "")
+                    continue
+
+                print(
+                    f"[pipeline] Refining batch {batch_indices[0]}-{batch_indices[-1]} "
+                    f"({len(batch_indices)} chunks): {combined_draft[:80]!r}"
+                )
+
+                api_key = self._settings.get("api_key")
+                mode = self._settings.get("mode")
+                injected_tail = self._injected_tail()
+                open_delimiters = self._compute_open_delimiters(self._session_buffer)
+
+                try:
+                    result = await asyncio.wait_for(
+                        api_client.refine(
+                            combined_draft,
+                            api_key,
+                            self._session_context,
+                            self._settings,
+                            mode,
+                            injected_tail=injected_tail,
+                            open_delimiters=open_delimiters,
+                        ),
+                        timeout=REFINE_TIMEOUT_S,
+                    )
+                    final_text = result.get("full_text") or combined_draft
+                except TimeoutError:
+                    print(
+                        f"[pipeline] Refinement timeout ({REFINE_TIMEOUT_S}s) "
+                        f"for batch {batch_indices[0]}-{batch_indices[-1]}; using draft"
+                    )
+                    final_text = combined_draft
+                    result = self._draft_fallback_result(combined_draft)
+                except Exception as e:
+                    print(
+                        f"[pipeline] Refinement error for batch "
+                        f"{batch_indices[0]}-{batch_indices[-1]}: {e}"
+                    )
+                    final_text = combined_draft
+                    result = self._draft_fallback_result(combined_draft)
+
+                commands = self._settings.get("dictation_commands") or []
+                cmd_lookup = {cmd["id"]: cmd for cmd in commands}
+                stop_requested = False
+                for seg in result.get("segments", []):
+                    cmd_def = cmd_lookup.get(seg.get("command", "none"))
+                    if cmd_def and cmd_def.get("category") == "control":
+                        action = cmd_def.get("action", {})
+                        if action.get("control") == "stop_dictation":
+                            stop_requested = True
+
+                for i, chunk in enumerate(chunks):
+                    if i == 0:
+                        chunk.final_text = final_text
+                        if self._on_final:
+                            self._on_final(chunk.id, final_text)
+                        self._signal_finalized(batch_indices[0], result)
+                    else:
+                        chunk.final_text = ""
+                        if self._on_final:
+                            self._on_final(chunk.id, "")
+                        self._signal_finalized(batch_indices[i], "")
+
+                    chunk.state = ChunkState.FINAL
+
+                if final_text.strip():
+                    self._session_context.append(final_text.strip())
+                    if len(self._session_context) > 5:
+                        self._session_context.pop(0)
+
+                if stop_requested:
+                    self.stop_session()
+
+    async def _force_emit_draft(self, index: int) -> bool:
+        """Emit raw draft for a blocked index so later chunks can inject."""
+        async with self._refine_lock:
+            if index in self._finalized:
+                return True
+
+            chunk = self._index_to_chunk.get(index)
+            if not chunk or not chunk.draft_text:
+                return False
+
+            self._draft_ready.pop(index, None)
+            draft = chunk.draft_text
+            result = self._draft_fallback_result(draft)
+
+            print(
+                f"[pipeline] Head-of-line timeout ({HEAD_BLOCK_TIMEOUT_S}s) "
+                f"for chunk {index}; emitting draft"
             )
-            final_text = result.get("full_text") or draft
-        except Exception as e:
-            print(f"[pipeline] Refinement error for chunk {chunk.id}: {e}")
-            final_text = draft  # graceful degradation
-            result = {"segments": [{"type": "text", "content": draft, "command": "none"}],
-                      "full_text": draft, "detected_language": "fr"}
 
-        # Check for control commands (e.g., stop_dictation)
-        commands = self._settings.get("dictation_commands") or []
-        cmd_lookup = {cmd["id"]: cmd for cmd in commands}
-        stop_requested = False
-        for seg in result.get("segments", []):
-            cmd_def = cmd_lookup.get(seg.get("command", "none"))
-            if cmd_def and cmd_def.get("category") == "control":
-                action = cmd_def.get("action", {})
-                if action.get("control") == "stop_dictation":
-                    stop_requested = True
+            chunk.final_text = draft
+            chunk.state = ChunkState.FINAL
+            if self._on_final:
+                self._on_final(chunk.id, draft)
 
-        chunk.final_text = final_text
-        chunk.state = ChunkState.FINAL
+            if draft.strip():
+                self._session_context.append(draft.strip())
+                if len(self._session_context) > 5:
+                    self._session_context.pop(0)
 
-        if self._on_final:
-            self._on_final(chunk.id, final_text)
-
-        # Update rolling context
-        if final_text.strip():
-            self._session_context.append(final_text.strip())
-            if len(self._session_context) > 5:
-                self._session_context.pop(0)
-
-        # Signal injection worker with full result for command dispatch
-        self._signal_finalized(chunk.index, result)
-
-        if stop_requested:
-            self.stop_session()
+            self._signal_finalized(index, result)
+            return True
 
     def _signal_finalized(self, index: int, result: dict | str):
         """Mark a chunk as ready for ordered injection."""
         self._finalized[index] = result
-        # Wake up the injection worker
         loop = asyncio.get_event_loop()
         loop.call_soon_threadsafe(self._inject_event.set)
 
@@ -307,29 +473,6 @@ class Pipeline:
             else:
                 print("[pipeline] No word to delete in session buffer")
 
-        elif edit_type == "correct_word":
-            # content should contain the word to correct; the LLM's full_text
-            # should contain the corrected version — but for segment-based dispatch,
-            # we need the replacement from the next text segment or from content itself
-            word = content.strip()
-            if not word:
-                print("[pipeline] Correct word: no word specified")
-                return
-            result = TextFieldEditor.find_word_offset(self._session_buffer, word)
-            if result:
-                offset_from_end, length = result
-                # For now, just delete the word — the LLM's full_text handles replacement
-                print(f"[pipeline] Found '{word}' at offset {offset_from_end} from end")
-                # Select from current position back to the word, then the word itself
-                await loop.run_in_executor(
-                    None, self._editor.delete_backwards, offset_from_end
-                )
-                # Re-inject everything after the deleted word
-                remaining = self._session_buffer[:-offset_from_end] if offset_from_end > 0 else ""
-                self._session_buffer = remaining
-            else:
-                print(f"[pipeline] Word '{word}' not found in session buffer")
-
         else:
             print(f"[pipeline] Unknown editing command: {edit_type}")
 
@@ -343,7 +486,6 @@ class Pipeline:
         cmd_lookup = {cmd["id"]: cmd for cmd in commands}
         segments = result.get("segments", [])
 
-        # Check if any segment is an editing or llm_instructed command
         has_special_commands = any(
             cmd_lookup.get(seg.get("command", "none"), {}).get("category")
             in ("editing", "llm_instructed")
@@ -351,12 +493,10 @@ class Pipeline:
         )
 
         if not has_special_commands:
-            # Standard case: use full_text directly (LLM already applied formatting commands)
             full_text = result.get("full_text", "")
             await self._inject_with_spacing(full_text, idx)
             return
 
-        # Special commands present — process segments individually
         for seg in segments:
             cmd_id = seg.get("command", "none")
             content = seg.get("content", "")
@@ -382,40 +522,59 @@ class Pipeline:
                 await self._inject_with_spacing(text, idx)
 
             elif category == "control":
-                pass  # handled in _process_chunk
+                pass
 
             elif category == "editing":
                 await self._handle_editing_command(cmd_id, content, action, idx)
 
             elif category == "llm_instructed":
-                # The LLM should have applied the instruction in full_text
-                # Use full_text for the whole result instead of segment-by-segment
                 full_text = result.get("full_text", "")
                 if full_text:
                     await self._inject_with_spacing(full_text, idx)
-                break  # full_text covers the entire result
+                break
+
+    def _has_unfinalized_chunks(self) -> bool:
+        return any(
+            i not in self._finalized
+            for i in range(self._next_inject_index, self._chunk_counter)
+        )
 
     async def _injection_worker(self):
         """
         Drains _finalized in strict index order, injecting text into the
-        focused app. Runs until the pipeline is stopped and all chunks
-        have been processed.
+        focused app. Falls back to draft text if head-of-line refinement blocks
+        later-ready chunks.
         """
+        head_blocked_since: float | None = None
+
         while True:
-            # Inject everything that's ready in order
             while self._next_inject_index in self._finalized:
+                head_blocked_since = None
                 result = self._finalized.pop(self._next_inject_index)
                 idx = self._next_inject_index
                 self._next_inject_index += 1
                 await self._dispatch_result(result, idx)
 
-            # Check if session is done and all chunks injected
-            if not self._active and self._next_inject_index >= self._chunk_counter:
+            if not self._active and not self._has_unfinalized_chunks():
                 break
 
-            # Wait for the next chunk to be finalized
+            waiting_idx = self._next_inject_index
+            later_ready = any(i > waiting_idx for i in self._finalized)
+
+            if later_ready and waiting_idx not in self._finalized:
+                if head_blocked_since is None:
+                    head_blocked_since = time.time()
+                elif (
+                    time.time() - head_blocked_since >= HEAD_BLOCK_TIMEOUT_S
+                    and await self._force_emit_draft(waiting_idx)
+                ):
+                    head_blocked_since = None
+                    continue
+            else:
+                head_blocked_since = None
+
             self._inject_event.clear()
             try:
-                await asyncio.wait_for(self._inject_event.wait(), timeout=30.0)
+                await asyncio.wait_for(self._inject_event.wait(), timeout=0.5)
             except TimeoutError:
-                break
+                continue

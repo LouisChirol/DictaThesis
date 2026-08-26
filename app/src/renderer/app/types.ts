@@ -27,12 +27,17 @@ export interface ReadyEvent {
   event: "ready";
 }
 
+export interface SessionClearedEvent {
+  event: "session_cleared";
+}
+
 export type SidecarEvent =
   | ChunkUpdateEvent
   | StatusChangeEvent
   | SettingsEvent
   | ErrorEvent
-  | ReadyEvent;
+  | ReadyEvent
+  | SessionClearedEvent;
 
 export interface SettingsData {
   api_key: string;
@@ -46,8 +51,6 @@ export interface SettingsData {
   enable_injection: boolean;
   vocabulary: string[];
   bibliography: string;
-  strip_auto_punctuation: boolean;
-  magic_word: string;
 }
 
 // API exposed to renderer via contextBridge
@@ -58,6 +61,8 @@ export interface DictaThesisAPI {
   quit: () => void;
   saveSettings: (data: Partial<SettingsData>) => void;
   getSettings: () => void;
+  injectLiteral: (text: string) => void;
+  clearSession: () => void;
   loadBibFile: () => Promise<string | null>;
 
   startDrag: (x: number, y: number) => void;
@@ -70,6 +75,7 @@ export interface DictaThesisAPI {
   onStatusChange: (cb: (data: StatusChangeEvent) => void) => void;
   onSettings: (cb: (data: SettingsEvent) => void) => void;
   onError: (cb: (data: ErrorEvent) => void) => void;
+  onSessionCleared: (cb: () => void) => void;
 }
 
 declare global {

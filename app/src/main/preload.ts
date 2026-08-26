@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld("dictaThesis", {
   saveSettings: (data: Record<string, unknown>) =>
     ipcRenderer.send("cmd:update_settings", data),
   getSettings: () => ipcRenderer.send("cmd:get_settings"),
+  injectLiteral: (text: string) => ipcRenderer.send("cmd:inject_literal", text),
+  clearSession: () => ipcRenderer.send("cmd:clear_session"),
   loadBibFile: () => ipcRenderer.invoke("ui:load_bib_file"),
 
   // Window controls
@@ -30,5 +32,8 @@ contextBridge.exposeInMainWorld("dictaThesis", {
   },
   onError: (cb: (data: any) => void) => {
     ipcRenderer.on("event:error", (_e, data) => cb(data));
+  },
+  onSessionCleared: (cb: () => void) => {
+    ipcRenderer.on("event:session_cleared", () => cb());
   },
 });

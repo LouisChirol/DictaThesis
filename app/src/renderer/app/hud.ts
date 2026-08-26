@@ -18,13 +18,22 @@ const btnInsert = document.getElementById("btn-insert") as HTMLButtonElement;
 const btnCopySelected = document.getElementById("btn-copy-selected") as HTMLButtonElement;
 const btnCopyAll = document.getElementById("btn-copy-all") as HTMLButtonElement;
 const btnUnselectAll = document.getElementById("btn-unselect-all") as HTMLButtonElement;
+const btnClear = document.getElementById("btn-clear") as HTMLButtonElement;
+const insertMenu = document.getElementById("insert-menu")!;
+const btnInsertMenu = document.getElementById("btn-insert-menu") as HTMLButtonElement;
+const insertMenuPanel = document.getElementById("insert-menu-panel")!;
 const btnPin = document.getElementById("btn-pin") as HTMLButtonElement;
 const btnSettings = document.getElementById("btn-settings") as HTMLButtonElement;
 const btnQuit = document.getElementById("btn-quit") as HTMLButtonElement;
 
 let hasChunks = false;
 let insertionEnabled = true;
+let clearConfirmPending = false;
+let lastStatusMessage = "Ready — press Start or F9 to begin dictation";
+let lastStatusKind: "idle" | "recording" | "processing" = "idle";
 const selectedChunkIds = new Set<string>();
+
+const CLEAR_CONFIRM_MESSAGE = "Press Enter to clear transcript and context";
 
 // ── Window drag (JS fallback — -webkit-app-region: drag is broken on Linux/WSL) ──
 
@@ -32,7 +41,6 @@ const titlebar = document.querySelector(".titlebar") as HTMLElement;
 let isDragging = false;
 
 titlebar.addEventListener("mousedown", (e: MouseEvent) => {
-  // Only drag from the titlebar itself, not from buttons
   const target = e.target as HTMLElement;
   if (target.closest(".titlebar-buttons")) return;
 
@@ -48,6 +56,38 @@ document.addEventListener("mousemove", (e: MouseEvent) => {
 
 document.addEventListener("mouseup", () => {
   isDragging = false;
+});
+
+// ── Insert menu ──
+
+function setInsertMenuOpen(open: boolean): void {
+  insertMenuPanel.hidden = !open;
+  btnInsertMenu.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function closeInsertMenu(): void {
+  setInsertMenuOpen(false);
+}
+
+btnInsertMenu.addEventListener("click", (e) => {
+  e.stopPropagation();
+  setInsertMenuOpen(insertMenuPanel.hidden);
+});
+
+insertMenuPanel.querySelectorAll<HTMLButtonElement>(".insert-menu-item").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const text = btn.dataset.insert ?? "";
+    if (text) {
+      window.dictaThesis.injectLiteral(text);
+    }
+    closeInsertMenu();
+  });
+});
+
+document.addEventListener("click", (e) => {
+  if (!insertMenu.contains(e.target as Node)) {
+    closeInsertMenu();
+  }
 });
 
 // ── Buttons ──
@@ -79,6 +119,13 @@ btnUnselectAll.addEventListener("click", () => {
   clearSelection();
   setStatus("Selection cleared", "idle");
 });
+btnClear.addEventListener("click", () => {
+  if (clearConfirmPending) {
+    cancelClearConfirm();
+  } else {
+    startClearConfirm();
+  }
+});
 btnPin.addEventListener("click", async () => {
   const pinned = await window.dictaThesis.togglePin();
   setPinButtonState(pinned);
@@ -86,7 +133,28 @@ btnPin.addEventListener("click", async () => {
 btnSettings.addEventListener("click", () => window.dictaThesis.openSettings());
 btnQuit.addEventListener("click", () => window.dictaThesis.quit());
 
+document.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (!clearConfirmPending) return;
+
+  if (e.key === "Enter") {
+    e.preventDefault();
+    confirmClear();
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    cancelClearConfirm();
+  }
+});
+
 // ── Chunk rendering ──
+
+function clearHudChunks(): void {
+  chunksContainer.innerHTML = "";
+  chunks.clear();
+  clearSelection();
+  hasChunks = false;
+  chunksContainer.innerHTML =
+    '<div class="empty-state">Transcribed text will appear here</div>';
+}
 
 function clearEmptyState(): void {
   if (!hasChunks) {
@@ -100,7 +168,6 @@ function addOrUpdateChunk(chunkId: string, text: string, state: "draft" | "final
 
   const existing = chunks.get(chunkId);
   if (existing) {
-    // Update existing chunk
     existing.text = text;
     existing.state = state;
     existing.element.textContent = text;
@@ -109,12 +176,10 @@ function addOrUpdateChunk(chunkId: string, text: string, state: "draft" | "final
       existing.element.classList.add("selected");
     }
 
-    // If finalized, schedule settle
     if (state === "final") {
       existing.settleTimer = setTimeout(() => settleChunk(chunkId), 3000);
     }
   } else {
-    // Create new chunk element
     const el = document.createElement("div");
     el.className = `chunk chunk-${state}`;
     el.textContent = text;
@@ -131,7 +196,6 @@ function addOrUpdateChunk(chunkId: string, text: string, state: "draft" | "final
     }
   }
 
-  // Auto-scroll to bottom
   chunksContainer.scrollTop = chunksContainer.scrollHeight;
 }
 
@@ -203,17 +267,28 @@ function updateInsertButton(): void {
     ? "Cursor insertion enabled"
     : "Cursor insertion disabled (cursor mode)";
 
-  // Update status bar if we're recording in cursor mode
-  if (!insertionEnabled && !btnStart.disabled === false) {
+  if (!insertionEnabled && btnStart.disabled === false) {
     statusBar.classList.toggle("cursor-mode", true);
   } else {
     statusBar.classList.toggle("cursor-mode", false);
   }
 }
 
-function setStatus(message: string, status: "idle" | "recording" | "processing"): void {
+function setStatus(
+  message: string,
+  status: "idle" | "recording" | "processing",
+  options?: { remember?: boolean },
+): void {
+  if (options?.remember) {
+    lastStatusMessage = message;
+    lastStatusKind = status;
+  }
+
   statusBar.textContent = message;
   statusBar.className = `status-bar ${status}`;
+  if (clearConfirmPending) {
+    statusBar.classList.add("confirm-pending");
+  }
   if (!insertionEnabled && status === "recording") {
     statusBar.classList.add("cursor-mode");
     statusBar.textContent = message + " (cursor mode — not inserting)";
@@ -225,6 +300,31 @@ function setRecordingUI(recording: boolean): void {
   btnStop.disabled = !recording;
 }
 
+function startClearConfirm(): void {
+  clearConfirmPending = true;
+  btnClear.classList.add("btn-clear-pending");
+  btnClear.textContent = "Enter to confirm";
+  setStatus(CLEAR_CONFIRM_MESSAGE, lastStatusKind);
+  statusBar.classList.add("confirm-pending");
+}
+
+function cancelClearConfirm(): void {
+  if (!clearConfirmPending) return;
+  clearConfirmPending = false;
+  btnClear.classList.remove("btn-clear-pending");
+  btnClear.textContent = "Clear";
+  setStatus(lastStatusMessage, lastStatusKind);
+}
+
+function confirmClear(): void {
+  clearConfirmPending = false;
+  btnClear.classList.remove("btn-clear-pending");
+  btnClear.textContent = "Clear";
+  window.dictaThesis.clearSession();
+  clearHudChunks();
+  setStatus("Transcript and context cleared", "idle", { remember: true });
+}
+
 // ── Event handlers ──
 
 window.dictaThesis.onChunkUpdate((data) => {
@@ -232,33 +332,32 @@ window.dictaThesis.onChunkUpdate((data) => {
 });
 
 window.dictaThesis.onStatusChange((data) => {
-  setStatus(data.message, data.status);
+  cancelClearConfirm();
+  setStatus(data.message, data.status, { remember: true });
 
   if (data.status === "recording") {
     setRecordingUI(true);
-    // Clear previous chunks on new session
-    chunksContainer.innerHTML = "";
-    chunks.clear();
-    clearSelection();
-    hasChunks = false;
-    clearEmptyState();
+    clearHudChunks();
   } else if (data.status === "idle") {
     setRecordingUI(false);
   }
-  // "processing" keeps stop disabled since we already stopped
 });
 
 window.dictaThesis.onError((data) => {
-  setStatus("Error", "idle");
+  cancelClearConfirm();
+  setStatus("Error", "idle", { remember: true });
   setRecordingUI(false);
 
-  // Show error in chunks area for visibility
   clearEmptyState();
   const el = document.createElement("div");
   el.className = "chunk chunk-error";
   el.textContent = data.message;
   chunksContainer.appendChild(el);
   chunksContainer.scrollTop = chunksContainer.scrollHeight;
+});
+
+window.dictaThesis.onSessionCleared(() => {
+  clearHudChunks();
 });
 
 window.dictaThesis.onSettings((data) => {

@@ -2,7 +2,6 @@
 name = "dictathesis-sidecar"
 version = "0.1.0"
 description = "DictaThesis Python sidecar — audio capture, AI pipeline, text injection"
-readme = "../README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
@@ -60,8 +59,7 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = [
     "api_client", "audio", "context_reader", "injector",
-    "pipeline", "platform_utils", "prompt", "punctuation",
-    "settings_store", "sidecar", "text_editor",
+    "pipeline", "platform_utils", "prompt", "settings_store", "sidecar", "text_editor",
 ]
 
 [tool.ruff.format]

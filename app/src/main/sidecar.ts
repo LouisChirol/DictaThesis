@@ -12,6 +12,7 @@ import { app } from "electron";
 export interface SidecarCommand {
   cmd: string;
   data?: Record<string, unknown>;
+  text?: string;
 }
 
 export class SidecarManager extends EventEmitter {

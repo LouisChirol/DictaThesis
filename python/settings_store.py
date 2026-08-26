@@ -9,120 +9,152 @@ import os
 import platform
 from pathlib import Path
 
+COMMANDS_VERSION = 2
+
+# Distinctive voice commands — no spoken point/virgule; punctuation is inferred by the LLM.
 DEFAULT_DICTATION_COMMANDS = [
-    # --- Punctuation ---
-    {"id": "period", "triggers": ["point", "period", "point final"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "."},
-     "description": "Insert a period"},
-    {"id": "comma", "triggers": ["virgule", "comma"],
-     "category": "formatting", "action": {"type": "insert_text", "text": ","},
-     "description": "Insert a comma"},
-    {"id": "question_mark", "triggers": ["point d'interrogation", "question mark"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "?"},
-     "description": "Insert a question mark"},
-    {"id": "exclamation_mark", "triggers": ["point d'exclamation", "exclamation mark"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "!"},
-     "description": "Insert an exclamation mark"},
-    {"id": "colon", "triggers": ["deux points", "colon"],
-     "category": "formatting", "action": {"type": "insert_text", "text": ":"},
-     "description": "Insert a colon"},
-    {"id": "semicolon", "triggers": ["point virgule", "semicolon"],
-     "category": "formatting", "action": {"type": "insert_text", "text": ";"},
-     "description": "Insert a semicolon"},
-    {"id": "slash", "triggers": ["slash"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "/"},
-     "description": "Insert a slash"},
-    {"id": "backslash", "triggers": ["antislash", "backslash"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "\\"},
-     "description": "Insert a backslash"},
-    {"id": "open_paren", "triggers": ["parenthèse", "ouvrir parenthèse", "open parenthesis"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "("},
-     "description": "Open parenthesis"},
-    {"id": "close_paren", "triggers": ["fin parenthèse", "fermer parenthèse", "close parenthesis"],
-     "category": "formatting", "action": {"type": "insert_text", "text": ")"},
-     "description": "Close parenthesis"},
-    {"id": "open_quote", "triggers": ["guillemet", "ouvrir guillemet", "open quote"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "\""},
-     "description": "Open quotation mark"},
-    {"id": "close_quote", "triggers": ["fin guillemet", "fermer guillemet", "close quote"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "\""},
-     "description": "Close quotation mark"},
-    {"id": "open_bracket", "triggers": ["crochet", "ouvrir crochet", "open bracket"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "["},
-     "description": "Open bracket"},
-    {"id": "close_bracket", "triggers": ["fin crochet", "fermer crochet", "close bracket"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "]"},
-     "description": "Close bracket"},
-    {"id": "newline", "triggers": ["à la ligne", "new line", "next line"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "\n"},
-     "description": "Insert a line break"},
-    {"id": "new_paragraph", "triggers": ["nouveau paragraphe", "new paragraph"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "\n\n"},
-     "description": "Start a new paragraph"},
-    # --- Headings ---
-    {"id": "heading1", "triggers": ["titre un", "heading one", "title one"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "\n# "},
-     "description": "Start heading level 1"},
-    {"id": "heading2", "triggers": ["titre deux", "heading two", "title two"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "\n## "},
-     "description": "Start heading level 2"},
-    {"id": "heading3", "triggers": ["titre trois", "heading three"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "\n### "},
-     "description": "Start heading level 3"},
-    # --- Inline formatting ---
-    {"id": "bold_start", "triggers": ["gras", "bold", "en gras"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "**"},
-     "description": "Start bold text"},
-    {"id": "bold_end", "triggers": ["fin gras", "end bold"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "**"},
-     "description": "End bold text"},
-    {"id": "italic_start", "triggers": ["italique", "italic"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "_"},
-     "description": "Start italic text"},
-    {"id": "italic_end", "triggers": ["fin italique", "end italic"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "_"},
-     "description": "End italic text"},
-    # --- Equations ---
-    {"id": "equation_start", "triggers": ["début équation", "start equation"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "$"},
-     "description": "Start inline equation"},
-    {"id": "equation_end", "triggers": ["fin équation", "end equation"],
-     "category": "formatting", "action": {"type": "insert_text", "text": "$"},
-     "description": "End inline equation"},
-    # --- References ---
-    {"id": "bibliography_ref",
-     "triggers": ["référence", "reference number", "reference", "cite"],
-     "category": "formatting",
-     "action": {"type": "insert_text", "text": "\\cite{ref__N__}"},
-     "description": "Insert bibliography reference (N = reference number)"},
+    # --- Structure ---
+    {
+        "id": "new_paragraph",
+        "triggers": ["nouveau paragraphe", "new paragraph"],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": "\n\n"},
+        "description": "Start a new paragraph",
+    },
+    {
+        "id": "heading1",
+        "triggers": ["titre un", "heading one", "title one"],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": "\n# "},
+        "description": "Start heading level 1",
+    },
+    {
+        "id": "heading2",
+        "triggers": ["titre deux", "heading two", "title two"],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": "\n## "},
+        "description": "Start heading level 2",
+    },
+    {
+        "id": "heading3",
+        "triggers": ["titre trois", "heading three", "title three"],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": "\n### "},
+        "description": "Start heading level 3",
+    },
+    {
+        "id": "bibliography_ref",
+        "triggers": ["référence", "reference number", "reference", "cite", "citation"],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": "\\cite{ref__N__}"},
+        "description": "Insert bibliography reference (N = reference number)",
+    },
+    {
+        "id": "equation_start",
+        "triggers": ["début équation", "start equation"],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": "$"},
+        "description": "Start inline equation",
+    },
+    {
+        "id": "equation_end",
+        "triggers": ["fin équation", "end equation"],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": "$"},
+        "description": "End inline equation",
+    },
+    # --- Delimiters (spoken open/close; smart pairing handled by LLM + session stack) ---
+    {
+        "id": "open_paren",
+        "triggers": ["ouvrir parenthèse", "open parenthesis", "parenthèse ouverte"],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": "("},
+        "description": "Open parenthesis",
+    },
+    {
+        "id": "close_paren",
+        "triggers": ["fermer parenthèse", "close parenthesis", "fin parenthèse"],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": ")"},
+        "description": "Close parenthesis",
+    },
+    {
+        "id": "open_quote",
+        "triggers": ["ouvrir guillemet", "guillemets", "open quote"],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": "«"},
+        "description": "Open French quotation mark",
+    },
+    {
+        "id": "close_quote",
+        "triggers": ["fermer guillemet", "fin guillemet", "close quote"],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": "»"},
+        "description": "Close French quotation mark",
+    },
+    {
+        "id": "open_bracket",
+        "triggers": ["ouvrir crochet", "open bracket"],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": "["},
+        "description": "Open bracket",
+    },
+    {
+        "id": "close_bracket",
+        "triggers": ["fermer crochet", "close bracket", "fin crochet"],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": "]"},
+        "description": "Close bracket",
+    },
     # --- Control ---
-    {"id": "stop_dictation", "triggers": ["arrêter la dictée", "stop dictation"],
-     "category": "control", "action": {"type": "control", "control": "stop_dictation"},
-     "description": "Stop the dictation session"},
-    # --- Editing (Phase 4) ---
-    {"id": "delete_previous_sentence",
-     "triggers": ["supprimer la phrase précédente", "delete previous sentence"],
-     "category": "editing",
-     "action": {"type": "edit", "edit": "delete_previous_sentence"},
-     "description": "Select and delete the previous sentence"},
-    {"id": "delete_previous_word",
-     "triggers": ["supprimer le mot précédent", "delete previous word"],
-     "category": "editing",
-     "action": {"type": "edit", "edit": "delete_previous_word"},
-     "description": "Delete the previous word"},
-    {"id": "correct_word",
-     "triggers": ["corriger le mot", "correct the word"],
-     "category": "editing",
-     "action": {"type": "edit", "edit": "correct_word"},
-     "description": "Correct a specific word in the previously dictated text"},
-    # --- LLM-instructed ---
-    {"id": "formal_rewrite",
-     "triggers": ["réécrire formellement", "rewrite formally"],
-     "category": "llm_instructed",
-     "action": {"type": "llm_instruction",
-                "instruction": "Rewrite the preceding sentence in a more formal academic register."},
-     "description": "Rewrite text in a more formal register"},
+    {
+        "id": "stop_dictation",
+        "triggers": ["arrêter la dictée", "stop dictation"],
+        "category": "control",
+        "action": {"type": "control", "control": "stop_dictation"},
+        "description": "Stop the dictation session",
+    },
+    # --- Editing ---
+    {
+        "id": "delete_previous_sentence",
+        "triggers": [
+            "annuler la phrase précédente",
+            "supprimer la phrase précédente",
+            "delete previous sentence",
+            "undo sentence",
+        ],
+        "category": "editing",
+        "action": {"type": "edit", "edit": "delete_previous_sentence"},
+        "description": "Delete the previous sentence",
+    },
+    {
+        "id": "delete_previous_word",
+        "triggers": ["supprimer le mot précédent", "delete previous word", "undo word"],
+        "category": "editing",
+        "action": {"type": "edit", "edit": "delete_previous_word"},
+        "description": "Delete the previous word",
+    },
 ]
+
+LEGACY_COMMAND_IDS = frozenset(
+    {
+        "period",
+        "comma",
+        "question_mark",
+        "exclamation_mark",
+        "colon",
+        "semicolon",
+        "slash",
+        "backslash",
+        "newline",
+        "bold_start",
+        "bold_end",
+        "italic_start",
+        "italic_end",
+        "correct_word",
+        "formal_rewrite",
+    }
+)
 
 DEFAULTS = {
     "api_key": "",
@@ -140,8 +172,7 @@ DEFAULTS = {
     "hud_opacity": 0.92,
     "inject_delay": 0.08,  # seconds to wait after clipboard write before paste
     "dictation_commands": DEFAULT_DICTATION_COMMANDS,
-    "strip_auto_punctuation": False,  # strip STT-generated punctuation unless magic word
-    "magic_word": "top",  # prefix word to keep explicit punctuation
+    "commands_version": COMMANDS_VERSION,
 }
 
 
@@ -157,6 +188,23 @@ def _config_dir() -> Path:
 
 def _config_path() -> Path:
     return _config_dir() / "config.json"
+
+
+def _needs_commands_migration(data: dict) -> bool:
+    version = data.get("commands_version", 0)
+    if version < COMMANDS_VERSION:
+        return True
+    commands = data.get("dictation_commands") or []
+    return any(cmd.get("id") in LEGACY_COMMAND_IDS for cmd in commands)
+
+
+def _migrate_commands(data: dict) -> dict:
+    data["dictation_commands"] = list(DEFAULT_DICTATION_COMMANDS)
+    data["commands_version"] = COMMANDS_VERSION
+    # Drop deprecated magic-word settings
+    data.pop("strip_auto_punctuation", None)
+    data.pop("magic_word", None)
+    return data
 
 
 class SettingsStore:
@@ -175,6 +223,10 @@ class SettingsStore:
                 self._data = dict(DEFAULTS)
         else:
             self._data = dict(DEFAULTS)
+
+        if _needs_commands_migration(self._data):
+            self._data = _migrate_commands(self._data)
+            self.save()
 
     def save(self):
         self._path.parent.mkdir(parents=True, exist_ok=True)

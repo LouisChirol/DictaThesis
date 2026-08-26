@@ -32,9 +32,7 @@ DTYPE = "int16"
 BLOCK_MS = 30  # ms per audio frame fed to VAD
 BLOCK_SAMPLES = SAMPLE_RATE * BLOCK_MS // 1000  # 480 samples
 SILERO_FRAME_SAMPLES = 512  # Silero ONNX expects 512 samples at 16 kHz
-SILERO_ONNX_URL = (
-    "https://raw.githubusercontent.com/snakers4/silero-vad/master/src/silero_vad/data/silero_vad.onnx"
-)
+SILERO_ONNX_URL = "https://raw.githubusercontent.com/snakers4/silero-vad/master/src/silero_vad/data/silero_vad.onnx"
 
 
 def _frames_to_wav(frames: list[np.ndarray]) -> bytes:

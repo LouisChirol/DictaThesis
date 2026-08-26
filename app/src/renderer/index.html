@@ -29,6 +29,20 @@
 
     <div class="toolbar-row">
       <button id="btn-insert" class="btn btn-toggle active" title="Cursor insertion enabled">Insert ON</button>
+      <div class="insert-menu" id="insert-menu">
+        <button id="btn-insert-menu" class="btn btn-secondary" type="button" aria-haspopup="true" aria-expanded="false">
+          Insert &#9662;
+        </button>
+        <div id="insert-menu-panel" class="insert-menu-panel" hidden>
+          <button type="button" class="insert-menu-item" data-insert="(">(</button>
+          <button type="button" class="insert-menu-item" data-insert=")">)</button>
+          <button type="button" class="insert-menu-item" data-insert="«">«</button>
+          <button type="button" class="insert-menu-item" data-insert="»">»</button>
+          <button type="button" class="insert-menu-item" data-insert="[">[</button>
+          <button type="button" class="insert-menu-item" data-insert="]">]</button>
+        </div>
+      </div>
+      <button id="btn-clear" class="btn btn-secondary" title="Clear HUD transcript and session context">Clear</button>
       <button id="btn-copy-selected" class="btn btn-secondary" title="Copy selected chunks">Copy selected</button>
       <button id="btn-copy-all" class="btn btn-secondary" title="Copy all chunks">Copy all</button>
       <button id="btn-unselect-all" class="btn btn-secondary" title="Clear selected chunks">Unselect all</button>

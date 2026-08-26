@@ -1,6 +1,6 @@
 """
 Async Mistral API client.
-  - 1st pass: POST /v1/audio/transcriptions  (Voxtral)
+  - 1st pass: POST /v1/audio/transcriptions  (Voxtral Mini Transcribe 2)
   - 2nd pass: POST /v1/chat/completions      (Mistral Medium, JSON output)
 """
 
@@ -16,7 +16,8 @@ from prompt import build_prompt, build_response_schema
 BASE_URL = "https://api.mistral.ai/v1"
 TRANSCRIPTION_MODEL = "voxtral-mini-latest"
 REFINEMENT_MODEL = "mistral-medium-latest"
-TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+MAX_CONTEXT_BIAS_TERMS = 100
 
 
 class MistralAPIError(Exception):
@@ -26,26 +27,43 @@ class MistralAPIError(Exception):
         self.body = body
 
 
-async def transcribe(wav_bytes: bytes, api_key: str, language: str = "fr") -> str:
+async def transcribe(
+    wav_bytes: bytes,
+    api_key: str,
+    language: str = "fr",
+    injected_tail: str = "",
+    vocabulary: list[str] | None = None,
+) -> str:
     """
-    Send a WAV audio chunk to Voxtral and return the raw transcription text.
+    Pass 1: dedicated transcription endpoint (Voxtral Mini Transcribe 2).
 
-    Args:
-        wav_bytes: Raw WAV file bytes.
-        api_key:   Mistral API key.
-        language:  ISO 639-1 language hint ("fr", "en"). Pass "auto" to omit.
+    Uses context_bias from vocabulary (up to 100 terms). Document tail is not
+    sent to STT — continuity is handled in pass 2 via injected_tail.
     """
-    files = {"file": ("audio.wav", io.BytesIO(wav_bytes), "audio/wav")}
-    data = {"model": TRANSCRIPTION_MODEL}
+    del injected_tail  # STT endpoint has no tail prompt; Large uses it in pass 2
+
+    multipart: list[tuple[str, tuple[str | None, str | io.BytesIO, str | None]]] = [
+        ("file", ("audio.wav", io.BytesIO(wav_bytes), "audio/wav")),
+        ("model", (None, TRANSCRIPTION_MODEL)),
+    ]
     if language and language != "auto":
-        data["language"] = language
+        multipart.append(("language", (None, language)))
+
+    bias: list[str] = []
+    for term in (vocabulary or [])[:MAX_CONTEXT_BIAS_TERMS]:
+        for part in str(term).split():
+            cleaned = part.strip().strip(",")
+            if cleaned:
+                bias.append(cleaned)
+    bias = bias[:MAX_CONTEXT_BIAS_TERMS]
+    for term in bias:
+        multipart.append(("context_bias", (None, term)))
 
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         resp = await client.post(
             f"{BASE_URL}/audio/transcriptions",
             headers={"Authorization": f"Bearer {api_key}"},
-            files=files,
-            data=data,
+            files=multipart,
         )
         if resp.status_code != 200:
             raise MistralAPIError(resp.status_code, resp.text)
@@ -59,19 +77,20 @@ async def refine(
     settings,
     mode: str = "normal",
     injected_tail: str = "",
+    open_delimiters: list[str] | None = None,
 ) -> dict:
     """
-    Send a draft transcription through the 2nd-pass LLM for smart refinement.
-
-    Returns a dict with keys: segments, full_text, detected_language.
-    On any error, returns a minimal dict using the raw draft text so the
-    pipeline can fall back gracefully.
+    Pass 2: thesis-style refinement, smart punctuation, and command detection.
     """
     system_prompt, user_message = build_prompt(
-        draft_text, session_context, settings, mode, injected_tail=injected_tail
+        draft_text,
+        session_context,
+        settings,
+        mode,
+        injected_tail=injected_tail,
+        open_delimiters=open_delimiters,
     )
 
-    # Build schema dynamically from current command definitions
     commands = settings.get("dictation_commands") or []
     command_ids = [cmd["id"] for cmd in commands]
     response_schema = build_response_schema(command_ids)
@@ -103,7 +122,6 @@ async def refine(
             json=payload,
         )
         if resp.status_code != 200:
-            # Non-fatal: fall back to raw draft
             print(f"[api_client] Refinement error {resp.status_code}: {resp.text[:200]}")
             return _fallback(draft_text)
 
@@ -111,7 +129,6 @@ async def refine(
         raw_content = body["choices"][0]["message"]["content"]
         try:
             parsed = json.loads(raw_content)
-            # Validate minimal expected shape
             if "full_text" not in parsed:
                 return _fallback(draft_text)
             return parsed

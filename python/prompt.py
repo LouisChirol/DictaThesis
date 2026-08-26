@@ -1,8 +1,7 @@
 """
-System prompt assembly and voice command → text mapping for the 2nd-pass LLM.
+System prompt assembly and voice command → text mapping for DictaThesis.
 
-Command definitions are loaded from settings (dictation_commands) and used to
-dynamically build the JSON schema enum and prompt section.
+Pass 2: build_prompt — Mistral Medium thesis refinement + command detection.
 """
 
 from __future__ import annotations
@@ -56,7 +55,7 @@ def build_command_prompt_section(commands: list[dict]) -> str:
 
         extra = ""
         if cmd_id == "bibliography_ref":
-            extra = " (content = the number N as a string)"
+            extra = " (content = the reference number N as a string)"
         if desc:
             extra += f" — {desc}"
 
@@ -71,76 +70,68 @@ def build_command_prompt_section(commands: list[dict]) -> str:
 
     sections = []
     if formatting_lines:
-        sections.append("### Formatting commands (applied as text in `full_text`):\n"
-                        + "\n".join(formatting_lines))
+        sections.append(
+            "### Structure and delimiter commands (apply in `full_text` as plain text):\n"
+            + "\n".join(formatting_lines)
+        )
     if editing_lines:
-        sections.append("### Editing commands (produce NO text in `full_text`, only in `segments`):\n"
-                        + "\n".join(editing_lines))
+        sections.append(
+            "### Editing commands (NO text in `full_text`, only in `segments`):\n"
+            + "\n".join(editing_lines)
+        )
     if control_lines:
-        sections.append("### Control commands (produce NO text in `full_text`):\n"
-                        + "\n".join(control_lines))
+        sections.append(
+            "### Control commands (NO text in `full_text`):\n" + "\n".join(control_lines)
+        )
 
     return "\n\n".join(sections)
 
 
 # ---------------------------------------------------------------------------
-# System prompts
+# Pass 2 — Mistral Large system prompt
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT_NORMAL = """\
-You are DictaThesis, a smart dictation assistant for academic thesis writing. \
-You process raw speech-to-text transcriptions and produce refined, ready-to-insert text.
+You are DictaThesis, a smart dictation assistant for doctoral thesis writing.
+You receive a raw speech-to-text draft and produce refined, ready-to-paste academic text.
 
-## Your tasks
-1. Fix transcription errors (misheard words, homophones) using the provided vocabulary.
-2. Capitalize the first word of each sentence. Do NOT add punctuation that the user did not \
-dictate. The user controls punctuation explicitly via voice commands.
-3. Detect voice commands and separate them from dictated text.
-4. Maintain a formal academic register appropriate for a doctoral thesis.
-5. Use the bibliography context to correctly resolve citation reference numbers.
+## Core behavior
+1. The user speaks their paper naturally — they do NOT say "point" or "virgule" for punctuation.
+2. Add appropriate French or English academic punctuation: periods, commas, colons, semicolons, \
+question and exclamation marks, with correct spacing.
+3. Fix transcription errors using the vocabulary and bibliography context.
+4. Capitalize sentence starts. Maintain a formal thesis register.
+5. Detect voice commands (distinctive phrases below) and separate them from dictated prose.
 
-## CRITICAL: Punctuation rules
-- Do NOT add periods, commas, or any punctuation at the end of the text unless the user \
-explicitly dictated a punctuation command (e.g., "commande point").
-- The STT model often auto-adds a trailing period to its output — you MUST remove it \
-unless the user explicitly said a punctuation command. Strip any auto-generated trailing punctuation.
-- The user dictates punctuation explicitly using voice commands prefixed with the magic word.
-- Only fix obvious transcription errors in existing punctuation, never add new punctuation.
+## Smart punctuation and paired marks
+- Infer sentence boundaries from syntax and pauses implied in the draft.
+- For parentheses, quotes, and brackets:
+  - If the user says "ouvrir parenthèse" / "open parenthesis" → insert "("
+  - If they say "fermer parenthèse" / "close parenthesis" → insert ")"
+  - French quotes: « and » (English: use straight double quotes when language is en)
+  - Brackets: [ and ]
+- If they say "entre parenthèses …" or "je cite …", wrap the following clause in parentheses or quotes.
+- If open delimiters are listed in context (unclosed «, (, [), close them when the clause ends \
+or leave open if the chunk is clearly incomplete.
+- Do NOT wrap every "par exemple" in parentheses. When ambiguous, prefer no pair over a wrong pair.
+- Words like "point de vue", "à ce point", "le point principal" are CONTENT, not commands.
 
-## Voice command detection
-Commands are triggered by a **magic prefix word**: the user says "commande" (French) or \
-"command" (English) followed by the command trigger phrase. Without this prefix, the words \
-must be treated as regular dictated text.
-
-Examples:
-- "commande point" → period command (inserts ".")
-- "le point principal" → regular text, NOT a command (no prefix)
-- "command new line" → newline command (inserts "\\n")
-- "commande supprimer la phrase précédente" → delete_previous_sentence command
-- "commande titre un" → heading1 command
-
-The magic prefix may be slightly misspelled by STT (e.g., "command", "commandes", "comandé"). \
-Be tolerant of minor variations.
+## Voice commands (no prefix word required)
+Recognize these phrases even if STT slightly misspells them. \
+"le point principal" is text; "nouveau paragraphe" is a command.
 
 {commands}
 
 ## Output rules
-- Return a JSON object matching the schema exactly.
-- `full_text`: the complete ready-to-insert text with **formatting** commands already applied as \
-plain-text formatting. For example, period becomes ".", newline becomes "\\n", \
-heading1 prepends "# " (Markdown), bibliography_ref for N=3 becomes "\\cite{{ref3}}".
-- **Editing and control commands** (e.g., delete_previous_sentence, stop_dictation) must appear \
-ONLY in `segments` — they produce NO text in `full_text`. If the entire utterance is an \
-editing/control command, `full_text` must be an empty string "".
-- `segments`: the raw breakdown showing which parts are text vs commands. \
-Split text and commands into separate segment objects.
-- `detected_language`: the language of the dictation ("fr" or "en").
-- Voice commands must be recognized even if the STT slightly misspells the trigger. \
-For example, "supprimer la phrase précédente" or "supprimer la phrase precedente" \
-should both match delete_previous_sentence.
-- **Continuity**: Your output will be appended directly after the tail text shown in context. \
-Ensure proper spacing and punctuation continuity. Do NOT repeat the tail text.
-- **Never add a trailing period or punctuation** unless the user explicitly dictated one via a command.
+- Return JSON matching the schema exactly.
+- `full_text`: complete ready-to-insert text with formatting commands already applied \
+(newlines, headings, \\cite{{refN}}, delimiters, $ for equations).
+- Editing and control commands appear ONLY in `segments` with empty `full_text` if the \
+utterance is purely a command.
+- `segments`: breakdown of text vs commands.
+- `detected_language`: "fr" or "en".
+- **Continuity**: output is appended after the document tail in context. \
+Do NOT repeat the tail. Match spacing and punctuation continuity.
 
 {context}
 """
@@ -181,23 +172,21 @@ def build_prompt(
     settings,
     mode: str = "normal",
     injected_tail: str = "",
+    open_delimiters: list[str] | None = None,
 ) -> tuple[str, str]:
     """
     Build (system_prompt, user_message) for the 2nd-pass LLM call.
-
-    Returns:
-        (system_prompt, user_message)
     """
     if mode == "equation":
         system = SYSTEM_PROMPT_EQUATION
         user = f'Convert this spoken math to LaTeX:\n"{draft_text}"'
         return system, user
 
-    # Build commands section from settings
     commands = settings.get("dictation_commands") or []
-    commands_section = build_command_prompt_section(commands) if commands else "(no commands defined)"
+    commands_section = (
+        build_command_prompt_section(commands) if commands else "(no commands defined)"
+    )
 
-    # Build dynamic context block
     context_parts: list[str] = []
 
     if injected_tail:
@@ -206,9 +195,16 @@ def build_prompt(
             f"...{injected_tail}"
         )
 
+    if open_delimiters:
+        labels = ", ".join(open_delimiters)
+        context_parts.append(
+            f"### Unclosed delimiters in the session so far: {labels}\n"
+            "Close them when appropriate or leave open if this chunk is incomplete."
+        )
+
     if session_context:
         recent = " ".join(session_context[-5:])
-        context_parts.append(f"### Recent dictated text (for coherence and context):\n{recent}")
+        context_parts.append(f"### Recent dictated text (for coherence):\n{recent}")
 
     vocabulary = settings.get("vocabulary")
     if vocabulary:
@@ -230,7 +226,7 @@ def build_prompt(
     system = SYSTEM_PROMPT_NORMAL.replace("{commands}", commands_section)
     system = system.replace("{context}", context_block)
 
-    user = f'Raw transcription to refine:\n"{draft_text}"'
+    user = f'Raw transcription draft to refine:\n"{draft_text}"'
     return system, user
 
 
@@ -243,11 +239,7 @@ def apply_commands(
     segments: list[dict],
     commands: list[dict] | None = None,
 ) -> str:
-    """
-    Walk segments and produce the final text string, applying commands.
-    This is a fallback if the LLM's `full_text` field is missing or empty.
-    """
-    # Build lookup from command definitions
+    """Walk segments and produce the final text string, applying commands."""
     cmd_lookup: dict[str, dict] = {}
     if commands:
         for cmd in commands:
@@ -271,7 +263,6 @@ def _command_to_text(command: str, content: str, cmd_lookup: dict[str, dict]) ->
     if command == "none":
         return content
 
-    # Look up command definition
     cmd_def = cmd_lookup.get(command)
     if not cmd_def:
         return content
@@ -281,15 +272,14 @@ def _command_to_text(command: str, content: str, cmd_lookup: dict[str, dict]) ->
 
     if action_type == "insert_text":
         text = action.get("text", content)
-        # Handle bibliography_ref placeholder
         if "__N__" in text:
             text = text.replace("__N__", content)
         return text
     elif action_type == "control":
-        return ""  # control commands produce no text
+        return ""
     elif action_type == "llm_instruction":
-        return content  # LLM should have already applied the instruction in full_text
+        return content
     elif action_type == "edit":
-        return ""  # editing commands are handled by the pipeline, not text substitution
+        return ""
 
     return content

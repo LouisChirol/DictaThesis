@@ -40,6 +40,7 @@ class TextFieldEditor:
         time.sleep(0.05)
         # Inject replacement text via clipboard
         from injector import inject_text
+
         inject_text(new_text)
 
     # ------------------------------------------------------------------
@@ -54,7 +55,7 @@ class TextFieldEditor:
             return 0
         # Find the last sentence-ending punctuation before the final one
         # Look for .!? followed by space, or start of string
-        matches = list(re.finditer(r'[.!?]\s+', stripped[:-1]))
+        matches = list(re.finditer(r"[.!?]\s+", stripped[:-1]))
         if matches:
             last_match = matches[-1]
             sentence_start = last_match.end()
@@ -70,7 +71,7 @@ class TextFieldEditor:
         if not stripped:
             return 0
         # Find the last word boundary
-        match = re.search(r'\s(\S+)$', stripped)
+        match = re.search(r"\s(\S+)$", stripped)
         if match:
             # Include the space before the word
             return len(buffer) - match.start()
@@ -101,8 +102,12 @@ class TextFieldEditor:
             f"[System.Windows.Forms.SendKeys]::SendWait('{key}')"
         )
         subprocess.run(
-            ["powershell.exe", "-NoProfile", "-Command",
-             "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; " + script],
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; " + script,
+            ],
             timeout=5,
         )
 

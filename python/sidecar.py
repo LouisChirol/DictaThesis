@@ -9,6 +9,8 @@ Commands (stdin):
     {"cmd": "stop_dictation"}
     {"cmd": "update_settings", "data": {...}}
     {"cmd": "get_settings"}
+    {"cmd": "inject_literal", "text": "..."}
+    {"cmd": "clear_session"}
     {"cmd": "quit"}
 
 Events (stdout):
@@ -16,6 +18,7 @@ Events (stdout):
     {"event": "chunk_update", "chunk_id": "...", "state": "draft"|"final", "text": "..."}
     {"event": "status_change", "status": "idle"|"recording"|"processing", "message": "..."}
     {"event": "settings", "data": {...}}
+    {"event": "session_cleared"}
     {"event": "error", "message": "..."}
 """
 
@@ -151,6 +154,13 @@ class Sidecar:
             self._emit({"event": "settings", "data": self._get_all_settings()})
         elif cmd == "get_settings":
             self._emit({"event": "settings", "data": self._get_all_settings()})
+        elif cmd == "inject_literal":
+            text = msg.get("text", "")
+            if text:
+                self.pipeline.inject_literal(text)
+        elif cmd == "clear_session":
+            self.pipeline.clear_context()
+            self._emit({"event": "session_cleared"})
         elif cmd == "quit":
             self._shutdown_requested = True
             self._quit()
@@ -159,9 +169,17 @@ class Sidecar:
 
     def _get_all_settings(self) -> dict:
         keys = [
-            "api_key", "language", "mode", "shortcut_key",
-            "vad_silence_duration", "max_chunk_duration", "vad_backend", "vad_mode", "vocabulary",
-            "bibliography", "enable_injection",
+            "api_key",
+            "language",
+            "mode",
+            "shortcut_key",
+            "vad_silence_duration",
+            "max_chunk_duration",
+            "vad_backend",
+            "vad_mode",
+            "vocabulary",
+            "bibliography",
+            "enable_injection",
         ]
         return {k: self.settings.get(k) for k in keys}
 
@@ -180,10 +198,12 @@ class Sidecar:
             return
         api_key = self.settings.get("api_key")
         if not api_key:
-            self._emit({
-                "event": "error",
-                "message": "No API key configured — open Settings first",
-            })
+            self._emit(
+                {
+                    "event": "error",
+                    "message": "No API key configured — open Settings first",
+                }
+            )
             return
 
         self.pipeline.start_session()
@@ -196,6 +216,7 @@ class Sidecar:
             if "device" in msg.lower() or "portaudio" in msg.lower():
                 try:
                     import sounddevice as sd
+
                     devices = sd.query_devices()
                     print(f"[sidecar] Available audio devices:\n{devices}")
                 except Exception:
@@ -212,11 +233,13 @@ class Sidecar:
             return
 
         self._recording = True
-        self._emit({
-            "event": "status_change",
-            "status": "recording",
-            "message": "Recording... (press Stop to end)",
-        })
+        self._emit(
+            {
+                "event": "status_change",
+                "status": "recording",
+                "message": "Recording... (press Stop to end)",
+            }
+        )
 
     def _stop_dictation(self):
         if not self._recording:
@@ -224,39 +247,47 @@ class Sidecar:
         self._recording = False
         self.audio.stop()
         self.pipeline.stop_session()
-        self._emit({
-            "event": "status_change",
-            "status": "processing",
-            "message": "Finishing... processing remaining chunks",
-        })
+        self._emit(
+            {
+                "event": "status_change",
+                "status": "processing",
+                "message": "Finishing... processing remaining chunks",
+            }
+        )
 
     # ------------------------------------------------------------------
     # Pipeline callbacks
     # ------------------------------------------------------------------
 
     def _on_draft(self, chunk_id: str, draft_text: str):
-        self._emit({
-            "event": "chunk_update",
-            "chunk_id": chunk_id,
-            "state": "draft",
-            "text": draft_text,
-        })
+        self._emit(
+            {
+                "event": "chunk_update",
+                "chunk_id": chunk_id,
+                "state": "draft",
+                "text": draft_text,
+            }
+        )
 
     def _on_final(self, chunk_id: str, final_text: str):
-        self._emit({
-            "event": "chunk_update",
-            "chunk_id": chunk_id,
-            "state": "final",
-            "text": final_text,
-        })
+        self._emit(
+            {
+                "event": "chunk_update",
+                "chunk_id": chunk_id,
+                "state": "final",
+                "text": final_text,
+            }
+        )
 
     def _on_pipeline_state(self, is_active: bool):
         if not is_active:
-            self._emit({
-                "event": "status_change",
-                "status": "idle",
-                "message": "Done — click Start for a new session",
-            })
+            self._emit(
+                {
+                    "event": "status_change",
+                    "status": "idle",
+                    "message": "Done — click Start for a new session",
+                }
+            )
 
     # ------------------------------------------------------------------
     # Hotkey (optional — Electron handles shortcuts when --no-hotkey)

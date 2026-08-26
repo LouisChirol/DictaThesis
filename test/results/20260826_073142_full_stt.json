@@ -1,0 +1,20 @@
+{
+  "mode": "full_stt",
+  "text": "Titre 1. Modèle individu centré. Titre 2. Généralité. Nouveau paragraphe. On a développé un modèle multi-échelle, stochastique et individu centré, formalisant les dynamiques de multiples clones, plasmides et gènes de résistance dans un service hospitalier, en considérant de la diversité et de l'évolution intra-hôte ainsi que de la transmission inter-hôte. Nouveau paragraphe. Les souches bactériennes sont caractérisées par leur espèce, leur séquence type, ouvrir parenthèse ST, fermer parenthèse, les gènes de résistance portés sur le chromosome, les types de plasmides et les gènes de résistance portés par ces plasmides.",
+  "verbatim_similarity": 0.9917627677100495,
+  "ground_truth_similarity": 0.0,
+  "vocabulary": [
+    "plasmides",
+    "stochastique",
+    "individu",
+    "centré",
+    "séquence",
+    "type",
+    "intra-hôte",
+    "inter-hôte",
+    "résistance",
+    "chromosome",
+    "bactériennes",
+    "hospitalier"
+  ]
+}

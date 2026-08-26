@@ -33,6 +33,18 @@ export function setupIpcHandlers(
     sidecar.send({ cmd: "get_settings" });
   });
 
+  ipcMain.on("cmd:inject_literal", (_e, text: string) => {
+    sidecar.send({ cmd: "inject_literal", text });
+  });
+
+  ipcMain.on("cmd:inject_literal", (_e, text: string) => {
+    sidecar.send({ cmd: "inject_literal", text });
+  });
+
+  ipcMain.on("cmd:clear_session", () => {
+    sidecar.send({ cmd: "clear_session" });
+  });
+
   ipcMain.on("cmd:quit", () => {
     console.log("[ipc] quit");
     quitApp();
@@ -104,6 +116,11 @@ export function setupIpcHandlers(
 
   sidecar.on("settings", (data) => {
     settingsWindow.webContents.send("event:settings", data);
+    hudWindow.webContents.send("event:settings", data);
+  });
+
+  sidecar.on("session_cleared", () => {
+    hudWindow.webContents.send("event:session_cleared");
   });
 
   sidecar.on("error", (data) => {

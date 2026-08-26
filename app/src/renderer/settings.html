@@ -84,7 +84,7 @@
     <div class="section">
       <div class="section-title">Custom Vocabulary</div>
       <div class="field">
-        <label>One term per line — helps the AI recognize domain-specific words</label>
+        <label>One term per line — guides transcription (context bias) and thesis refinement</label>
         <textarea id="vocabulary" placeholder="e.g.&#10;Transformer&#10;BERT&#10;fine-tuning"></textarea>
       </div>
     </div>
@@ -98,23 +98,6 @@
         <div class="btn-row">
           <button class="btn-secondary" id="btn-load-bib">Load .bib file</button>
         </div>
-      </div>
-    </div>
-
-    <!-- Punctuation Control -->
-    <div class="section">
-      <div class="section-title">Punctuation Control</div>
-      <div class="field">
-        <label class="checkbox-label">
-          <input type="checkbox" id="strip-auto-punctuation" />
-          Strip auto-generated punctuation from STT output
-        </label>
-        <label>Require a magic trigger word before explicit punctuation commands</label>
-      </div>
-      <div class="field">
-        <label for="magic-word">Magic word (prefix for punctuation commands)</label>
-        <input type="text" id="magic-word" value="top" placeholder="e.g. top, go, ok" />
-        <label class="hint">Say "{magic word} point" to insert a period. Without the magic word, STT punctuation is stripped.</label>
       </div>
     </div>
 

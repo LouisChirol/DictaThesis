@@ -105,6 +105,56 @@ body {
   background: var(--bg-hover);
 }
 
+/* ── Insert delimiter menu ── */
+
+.insert-menu {
+  position: relative;
+}
+
+.insert-menu-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(36px, 1fr));
+  gap: 4px;
+  padding: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.insert-menu-panel[hidden] {
+  display: none;
+}
+
+.insert-menu-item {
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-overlay);
+  cursor: pointer;
+}
+
+.insert-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.btn-clear-pending {
+  background: #4a3038;
+  color: #f38ba8;
+}
+
+.status-bar.confirm-pending {
+  background: #4a3038;
+  color: #f38ba8;
+}
+
 .btn-icon {
   background: var(--bg-overlay);
   color: var(--text-secondary);

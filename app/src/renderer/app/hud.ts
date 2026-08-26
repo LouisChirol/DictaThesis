@@ -404,6 +404,7 @@ window.dictaThesis.onSessionCleared(() => {
 window.dictaThesis.onSettings((data) => {
   insertionEnabled = data.data.enable_injection ?? true;
   updateInsertButton();
+  applyUiTheme(data.data.ui_theme);
 });
 
 window.dictaThesis.getSettings();

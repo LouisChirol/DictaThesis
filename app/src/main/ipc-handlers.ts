@@ -6,6 +6,12 @@ import { ipcMain, dialog, BrowserWindow, clipboard } from "electron";
 import * as fs from "fs";
 import { SidecarManager } from "./sidecar";
 
+function applyWindowTheme(hudWindow: BrowserWindow, settingsWindow: BrowserWindow, theme: string) {
+  const bg = theme === "parchment" ? "#f4f0e8" : "#1e1e2e";
+  hudWindow.setBackgroundColor(bg);
+  settingsWindow.setBackgroundColor(bg);
+}
+
 export function setupIpcHandlers(
   sidecar: SidecarManager,
   hudWindow: BrowserWindow,
@@ -117,6 +123,10 @@ export function setupIpcHandlers(
   sidecar.on("settings", (data) => {
     settingsWindow.webContents.send("event:settings", data);
     hudWindow.webContents.send("event:settings", data);
+    const theme = data?.data?.ui_theme;
+    if (theme) {
+      applyWindowTheme(hudWindow, settingsWindow, theme);
+    }
   });
 
   sidecar.on("session_cleared", () => {

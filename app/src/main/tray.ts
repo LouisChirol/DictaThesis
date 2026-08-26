@@ -24,10 +24,30 @@ export class TrayManager {
   }
 
   private loadIcons(): Record<AppStatus, Electron.NativeImage> {
+    const tray32 = path.join(__dirname, "..", "renderer", "assets", "tray-icon.png");
+    const tray64 = path.join(__dirname, "..", "renderer", "assets", "tray-icon@2x.png");
     const avatarPath = path.join(__dirname, "..", "renderer", "assets", "turgot-avatar.png");
-    if (fs.existsSync(avatarPath)) {
-      const base = nativeImage.createFromPath(avatarPath);
-      const trayIcon = base.resize({ width: 22, height: 22, quality: "best" });
+
+    let trayIcon: Electron.NativeImage | null = null;
+    if (fs.existsSync(tray32)) {
+      trayIcon = nativeImage.createFromPath(tray32);
+    } else if (fs.existsSync(avatarPath)) {
+      trayIcon = nativeImage.createFromPath(avatarPath).resize({
+        width: 32,
+        height: 32,
+        quality: "best",
+      });
+    }
+
+    if (trayIcon && !trayIcon.isEmpty()) {
+      if (fs.existsSync(tray64)) {
+        trayIcon.addRepresentation({
+          scaleFactor: 2.0,
+          width: 32,
+          height: 32,
+          buffer: fs.readFileSync(tray64),
+        });
+      }
       return {
         idle: trayIcon,
         recording: trayIcon,

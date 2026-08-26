@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="mocha">
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
   <link rel="stylesheet" href="styles/global.css" />
+  <link rel="stylesheet" href="styles/themes.css" />
   <link rel="stylesheet" href="styles/settings.css" />
   <title>DictaThesis — Settings</title>
 </head>
@@ -80,6 +81,18 @@
       </div>
     </div>
 
+    <!-- Appearance -->
+    <div class="section">
+      <div class="section-title">Appearance</div>
+      <div class="field">
+        <label>Color theme (HUD + settings)</label>
+        <div class="radio-group">
+          <label><input type="radio" name="ui-theme" value="mocha" checked /> Mocha — dark IDE style</label>
+          <label><input type="radio" name="ui-theme" value="parchment" /> Parchment — warm paper &amp; ink</label>
+        </div>
+      </div>
+    </div>
+
     <!-- Custom Vocabulary -->
     <div class="section">
       <div class="section-title">Custom Vocabulary</div>
@@ -108,6 +121,7 @@
   <!-- Toast -->
   <div class="toast" id="toast">Settings saved</div>
 
+  <script src="theme-apply.js"></script>
   <script src="app/settings.js"></script>
 </body>
 </html>

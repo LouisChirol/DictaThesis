@@ -180,6 +180,7 @@ class Sidecar:
             "vocabulary",
             "bibliography",
             "enable_injection",
+            "ui_theme",
         ]
         return {k: self.settings.get(k) for k in keys}
 

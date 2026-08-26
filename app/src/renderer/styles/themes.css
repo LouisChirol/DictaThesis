@@ -1,0 +1,86 @@
+/* DictaThesis — color themes (set via html[data-theme]) */
+
+[data-theme="mocha"] {
+  --bg-base: #1e1e2e;
+  --bg-surface: #262637;
+  --bg-overlay: #2e2e42;
+  --bg-hover: #363650;
+
+  --text-primary: #cdd6f4;
+  --text-secondary: #a6adc8;
+  --text-muted: #6c7086;
+
+  --accent-blue: #89b4fa;
+  --accent-green: #a6e3a1;
+  --accent-red: #f38ba8;
+  --accent-yellow: #f9e2af;
+  --accent-orange: #fab387;
+  --accent-mauve: #cba6f7;
+
+  --draft-text: #f9e2af;
+  --draft-bg: #3a2e00;
+  --final-text: #a6e3a1;
+  --final-bg: #002e1a;
+  --settled-text: #6c7086;
+
+  --border: #45475a;
+
+  --btn-start-bg: #2e4a3a;
+  --btn-start-text: var(--accent-green);
+  --btn-stop-bg: #4a2e36;
+  --btn-stop-text: var(--accent-red);
+  --btn-insert-active-bg: #1f4b3d;
+  --btn-insert-active-text: var(--accent-green);
+  --btn-pinned-bg: #1f4b3d;
+  --btn-pinned-text: var(--accent-green);
+  --btn-pinned-hover-bg: #285f4d;
+  --btn-pinned-hover-text: #d8f7d6;
+  --btn-clear-pending-bg: #4a3038;
+  --btn-clear-pending-text: #f38ba8;
+  --chunk-error-bg: #4a2e36;
+
+  --window-bg: #1e1e2e;
+}
+
+[data-theme="parchment"] {
+  /* Warm academic — ink on cream, fits thesis writing + Turgot portrait */
+  --bg-base: #f4f0e8;
+  --bg-surface: #ebe6dc;
+  --bg-overlay: #e2dbd0;
+  --bg-hover: #d8d0c4;
+
+  --text-primary: #2c2825;
+  --text-secondary: #5c534a;
+  --text-muted: #8a8178;
+
+  --accent-blue: #3d5a80;
+  --accent-green: #2d6a4f;
+  --accent-red: #9f1239;
+  --accent-yellow: #b45309;
+  --accent-orange: #c2410c;
+  --accent-mauve: #6d4c7d;
+
+  --draft-text: #92400e;
+  --draft-bg: #fef3c7;
+  --final-text: #166534;
+  --final-bg: #ecfdf5;
+  --settled-text: #8a8178;
+
+  --border: #c9c0b4;
+
+  --btn-start-bg: #2d6a4f;
+  --btn-start-text: #ecfdf5;
+  --btn-stop-bg: #fce8ec;
+  --btn-stop-text: #9f1239;
+  --btn-insert-active-bg: #2d6a4f;
+  --btn-insert-active-text: #ecfdf5;
+  --btn-pinned-bg: #2d6a4f;
+  --btn-pinned-text: #ecfdf5;
+  --btn-pinned-hover-bg: #3d7a5f;
+  --btn-pinned-hover-text: #f0fdf4;
+  --btn-clear-pending-bg: #fce8ec;
+  --btn-clear-pending-text: #9f1239;
+  --chunk-error-bg: #fce8ec;
+
+  --window-bg: #f4f0e8;
+}

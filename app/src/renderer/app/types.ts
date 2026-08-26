@@ -49,6 +49,7 @@ export interface SettingsData {
   vad_backend: "energy" | "webrtc" | "silero";
   vad_mode: number;
   enable_injection: boolean;
+  ui_theme: "mocha" | "parchment";
   vocabulary: string[];
   bibliography: string;
 }

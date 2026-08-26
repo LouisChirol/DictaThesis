@@ -50,6 +50,10 @@ btnSave.addEventListener("click", () => {
     'input[name="language"]:checked'
   ) as HTMLInputElement | null;
 
+  const themeRadio = document.querySelector(
+    'input[name="ui-theme"]:checked'
+  ) as HTMLInputElement | null;
+
   const data: Record<string, unknown> = {
     api_key: apiKeyInput.value,
     language: languageRadio?.value || "fr",
@@ -57,6 +61,7 @@ btnSave.addEventListener("click", () => {
     vad_silence_duration: parseFloat(vadSlider.value),
     max_chunk_duration: parseFloat(maxChunkSlider.value),
     vad_backend: vadBackendSelect.value || "energy",
+    ui_theme: themeRadio?.value || "mocha",
     vocabulary: vocabularyArea.value
       .split("\n")
       .map((s) => s.trim())
@@ -65,6 +70,7 @@ btnSave.addEventListener("click", () => {
   };
 
   window.dictaThesis.saveSettings(data);
+  applyUiTheme(themeRadio?.value);
   showToast("Settings saved");
 });
 
@@ -95,6 +101,12 @@ window.dictaThesis.onSettings((data) => {
   maxChunkSlider.value = String(s.max_chunk_duration ?? 12.0);
   maxChunkValue.textContent = `${maxChunkSlider.value}s`;
   vadBackendSelect.value = s.vad_backend || "energy";
+
+  const themeRadio = document.querySelector(
+    `input[name="ui-theme"][value="${s.ui_theme || "mocha"}"]`
+  ) as HTMLInputElement | null;
+  if (themeRadio) themeRadio.checked = true;
+  applyUiTheme(s.ui_theme);
 
   vocabularyArea.value = (s.vocabulary || []).join("\n");
   bibliographyArea.value = s.bibliography || "";

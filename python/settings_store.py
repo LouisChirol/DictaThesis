@@ -171,6 +171,7 @@ DEFAULTS = {
     "hud_geometry": "480x240+60+60",
     "hud_opacity": 0.92,
     "inject_delay": 0.08,  # seconds to wait after clipboard write before paste
+    "ui_theme": "mocha",  # "mocha" | "parchment"
     "dictation_commands": DEFAULT_DICTATION_COMMANDS,
     "commands_version": COMMANDS_VERSION,
 }

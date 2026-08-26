@@ -47,9 +47,11 @@ body {
   height: 28px;
   border-radius: 50%;
   object-fit: cover;
+  object-position: center top;
   border: 1px solid var(--border);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
+  image-rendering: auto;
 }
 
 .titlebar-label {
@@ -107,7 +109,7 @@ body {
 }
 
 .titlebar-status.confirm-pending {
-  color: #f38ba8;
+  color: var(--btn-clear-pending-text);
 }
 
 .titlebar-buttons {
@@ -154,14 +156,14 @@ body {
 }
 
 .btn-start {
-  background: #2e4a3a;
-  color: var(--accent-green);
+  background: var(--btn-start-bg);
+  color: var(--btn-start-text);
   min-width: 52px;
 }
 
 .btn-stop {
-  background: #4a2e36;
-  color: var(--accent-red);
+  background: var(--btn-stop-bg);
+  color: var(--btn-stop-text);
   min-width: 44px;
 }
 
@@ -172,8 +174,8 @@ body {
 }
 
 .btn-toggle.active {
-  background: #1f4b3d;
-  color: var(--accent-green);
+  background: var(--btn-insert-active-bg);
+  color: var(--btn-insert-active-text);
 }
 
 .btn-secondary {
@@ -187,8 +189,8 @@ body {
 }
 
 .btn-clear-pending {
-  background: #4a3038;
-  color: #f38ba8;
+  background: var(--btn-clear-pending-bg);
+  color: var(--btn-clear-pending-text);
 }
 
 .btn-icon {
@@ -200,17 +202,20 @@ body {
 }
 
 .btn-icon.pinned {
-  color: var(--accent-green);
+  background: var(--btn-pinned-bg);
+  color: var(--btn-pinned-text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--btn-pinned-text) 45%, transparent);
 }
 
-.btn-icon:hover {
+.btn-icon:hover:not(.pinned) {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
 .btn-icon.pinned:hover {
-  background: #1f4b3d;
-  color: #d8f7d6;
+  background: var(--btn-pinned-hover-bg);
+  color: var(--btn-pinned-hover-text);
+  filter: none;
 }
 
 /* ── Toolbar ── */
@@ -336,7 +341,7 @@ body {
 
 .chunk-error {
   color: var(--accent-red);
-  background: #4a2e36;
+  background: var(--chunk-error-bg);
   border-left: 2px solid var(--accent-red);
   white-space: pre-wrap;
   font-size: 11px;

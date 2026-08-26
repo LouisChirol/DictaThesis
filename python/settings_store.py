@@ -168,7 +168,7 @@ DEFAULTS = {
     "enable_injection": True,  # when false, keep text in HUD without pasting
     "vocabulary": [],  # list of custom terms (strings)
     "bibliography": "",  # raw text of bibliography
-    "hud_geometry": "420x220+60+60",
+    "hud_geometry": "480x240+60+60",
     "hud_opacity": 0.92,
     "inject_delay": 0.08,  # seconds to wait after clipboard write before paste
     "dictation_commands": DEFAULT_DICTATION_COMMANDS,

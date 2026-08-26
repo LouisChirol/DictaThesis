@@ -1,8 +1,9 @@
 /**
- * System tray icon with state-based icons and context menu.
+ * System tray icon with Turgot avatar and context menu.
  */
 
 import { Tray, Menu, nativeImage, BrowserWindow } from "electron";
+import * as fs from "fs";
 import * as path from "path";
 import { SidecarManager } from "./sidecar";
 
@@ -19,17 +20,30 @@ export class TrayManager {
     private onOpenSettings: () => void,
     private onQuit: () => void,
   ) {
-    this.icons = {
-      idle: this.createIcon("#6c7086", "#89b4fa"),       // gray body, blue accent
-      recording: this.createIcon("#f38ba8", "#f38ba8"),  // red
-      processing: this.createIcon("#6c7086", "#fab387"), // gray body, orange accent
+    this.icons = this.loadIcons();
+  }
+
+  private loadIcons(): Record<AppStatus, Electron.NativeImage> {
+    const avatarPath = path.join(__dirname, "..", "renderer", "assets", "turgot-avatar.png");
+    if (fs.existsSync(avatarPath)) {
+      const base = nativeImage.createFromPath(avatarPath);
+      const trayIcon = base.resize({ width: 22, height: 22, quality: "best" });
+      return {
+        idle: trayIcon,
+        recording: trayIcon,
+        processing: trayIcon,
+      };
+    }
+
+    return {
+      idle: this.createFallbackIcon("#6c7086", "#89b4fa"),
+      recording: this.createFallbackIcon("#f38ba8", "#f38ba8"),
+      processing: this.createFallbackIcon("#6c7086", "#fab387"),
     };
   }
 
-  /**
-   * Create a 22x22 tray icon as a filled circle with an accent dot.
-   */
-  private createIcon(bodyColor: string, accentColor: string): Electron.NativeImage {
+  /** Fallback tray glyph when avatar asset is missing. */
+  private createFallbackIcon(bodyColor: string, accentColor: string): Electron.NativeImage {
     const size = 22;
     const svg = `
       <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">

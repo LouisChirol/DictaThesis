@@ -237,7 +237,7 @@ class Sidecar:
             {
                 "event": "status_change",
                 "status": "recording",
-                "message": "Recording... (press Stop to end)",
+                "message": "Recording…",
             }
         )
 
@@ -251,7 +251,7 @@ class Sidecar:
             {
                 "event": "status_change",
                 "status": "processing",
-                "message": "Finishing... processing remaining chunks",
+                "message": "Finishing…",
             }
         )
 
@@ -285,7 +285,7 @@ class Sidecar:
                 {
                     "event": "status_change",
                     "status": "idle",
-                    "message": "Done — click Start for a new session",
+                    "message": "Ready · F9",
                 }
             )
 

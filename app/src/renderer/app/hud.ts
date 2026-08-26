@@ -1,5 +1,5 @@
 /**
- * HUD renderer — handles chunk display, status updates, and button interactions.
+ * HUD renderer — chunk display, compact status bar, and controls.
  */
 
 interface ChunkData {
@@ -12,16 +12,17 @@ interface ChunkData {
 const chunks = new Map<string, ChunkData>();
 const chunksContainer = document.getElementById("chunks")!;
 const statusBar = document.getElementById("status-bar")!;
+const statusDot = document.getElementById("status-dot")!;
 const btnStart = document.getElementById("btn-start") as HTMLButtonElement;
 const btnStop = document.getElementById("btn-stop") as HTMLButtonElement;
 const btnInsert = document.getElementById("btn-insert") as HTMLButtonElement;
-const btnCopySelected = document.getElementById("btn-copy-selected") as HTMLButtonElement;
-const btnCopyAll = document.getElementById("btn-copy-all") as HTMLButtonElement;
-const btnUnselectAll = document.getElementById("btn-unselect-all") as HTMLButtonElement;
 const btnClear = document.getElementById("btn-clear") as HTMLButtonElement;
 const insertMenu = document.getElementById("insert-menu")!;
 const btnInsertMenu = document.getElementById("btn-insert-menu") as HTMLButtonElement;
 const insertMenuPanel = document.getElementById("insert-menu-panel")!;
+const copyMenu = document.getElementById("copy-menu")!;
+const btnCopyMenu = document.getElementById("btn-copy-menu") as HTMLButtonElement;
+const copyMenuPanel = document.getElementById("copy-menu-panel")!;
 const btnPin = document.getElementById("btn-pin") as HTMLButtonElement;
 const btnSettings = document.getElementById("btn-settings") as HTMLButtonElement;
 const btnQuit = document.getElementById("btn-quit") as HTMLButtonElement;
@@ -29,13 +30,13 @@ const btnQuit = document.getElementById("btn-quit") as HTMLButtonElement;
 let hasChunks = false;
 let insertionEnabled = true;
 let clearConfirmPending = false;
-let lastStatusMessage = "Ready — press Start or F9 to begin dictation";
+let lastStatusMessage = "Ready · F9";
 let lastStatusKind: "idle" | "recording" | "processing" = "idle";
 const selectedChunkIds = new Set<string>();
 
-const CLEAR_CONFIRM_MESSAGE = "Press Enter to clear transcript and context";
+const CLEAR_CONFIRM_MESSAGE = "Enter to confirm clear";
 
-// ── Window drag (JS fallback — -webkit-app-region: drag is broken on Linux/WSL) ──
+// ── Window drag ──
 
 const titlebar = document.querySelector(".titlebar") as HTMLElement;
 let isDragging = false;
@@ -58,7 +59,7 @@ document.addEventListener("mouseup", () => {
   isDragging = false;
 });
 
-// ── Insert menu ──
+// ── Dropdown menus ──
 
 function setInsertMenuOpen(open: boolean): void {
   insertMenuPanel.hidden = !open;
@@ -69,9 +70,25 @@ function closeInsertMenu(): void {
   setInsertMenuOpen(false);
 }
 
+function setCopyMenuOpen(open: boolean): void {
+  copyMenuPanel.hidden = !open;
+  btnCopyMenu.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function closeCopyMenu(): void {
+  setCopyMenuOpen(false);
+}
+
 btnInsertMenu.addEventListener("click", (e) => {
   e.stopPropagation();
+  closeCopyMenu();
   setInsertMenuOpen(insertMenuPanel.hidden);
+});
+
+btnCopyMenu.addEventListener("click", (e) => {
+  e.stopPropagation();
+  closeInsertMenu();
+  setCopyMenuOpen(copyMenuPanel.hidden);
 });
 
 insertMenuPanel.querySelectorAll<HTMLButtonElement>(".insert-menu-item").forEach((btn) => {
@@ -84,9 +101,37 @@ insertMenuPanel.querySelectorAll<HTMLButtonElement>(".insert-menu-item").forEach
   });
 });
 
+copyMenuPanel.querySelectorAll<HTMLButtonElement>(".copy-menu-item").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const action = btn.dataset.copy;
+    closeCopyMenu();
+    if (action === "selected") {
+      const text = getSelectedChunkText();
+      if (!text) {
+        setStatus("Nothing selected", "idle");
+        return;
+      }
+      await copyText(text);
+    } else if (action === "all") {
+      const text = getAllChunkText();
+      if (!text) {
+        setStatus("Nothing to copy", "idle");
+        return;
+      }
+      await copyText(text);
+    } else if (action === "unselect") {
+      clearSelection();
+      setStatus("Selection cleared", "idle");
+    }
+  });
+});
+
 document.addEventListener("click", (e) => {
   if (!insertMenu.contains(e.target as Node)) {
     closeInsertMenu();
+  }
+  if (!copyMenu.contains(e.target as Node)) {
+    closeCopyMenu();
   }
 });
 
@@ -98,26 +143,6 @@ btnInsert.addEventListener("click", () => {
   insertionEnabled = !insertionEnabled;
   updateInsertButton();
   window.dictaThesis.saveSettings({ enable_injection: insertionEnabled });
-});
-btnCopySelected.addEventListener("click", async () => {
-  const selectedText = getSelectedChunkText();
-  if (!selectedText) {
-    setStatus("No chunk selected", "idle");
-    return;
-  }
-  await copyText(selectedText);
-});
-btnCopyAll.addEventListener("click", async () => {
-  const text = getAllChunkText();
-  if (!text) {
-    setStatus("No text to copy yet", "idle");
-    return;
-  }
-  await copyText(text);
-});
-btnUnselectAll.addEventListener("click", () => {
-  clearSelection();
-  setStatus("Selection cleared", "idle");
 });
 btnClear.addEventListener("click", () => {
   if (clearConfirmPending) {
@@ -152,8 +177,7 @@ function clearHudChunks(): void {
   chunks.clear();
   clearSelection();
   hasChunks = false;
-  chunksContainer.innerHTML =
-    '<div class="empty-state">Transcribed text will appear here</div>';
+  chunksContainer.innerHTML = '<div class="empty-state">Transcribed text appears here</div>';
 }
 
 function clearEmptyState(): void {
@@ -252,7 +276,7 @@ function getAllChunkText(): string {
 
 async function copyText(text: string): Promise<void> {
   const ok = await window.dictaThesis.copyText(text);
-  setStatus(ok ? "Copied to clipboard" : "Copy failed", "idle");
+  setStatus(ok ? "Copied" : "Copy failed", "idle");
 }
 
 function setPinButtonState(pinned: boolean): void {
@@ -262,16 +286,30 @@ function setPinButtonState(pinned: boolean): void {
 
 function updateInsertButton(): void {
   btnInsert.classList.toggle("active", insertionEnabled);
-  btnInsert.textContent = insertionEnabled ? "Insert ON" : "Insert OFF";
   btnInsert.title = insertionEnabled
-    ? "Cursor insertion enabled"
-    : "Cursor insertion disabled (cursor mode)";
+    ? "Paste into focused app (on)"
+    : "Cursor mode — not pasting";
+}
 
-  if (!insertionEnabled && btnStart.disabled === false) {
-    statusBar.classList.toggle("cursor-mode", true);
-  } else {
-    statusBar.classList.toggle("cursor-mode", false);
+function shortenStatus(
+  message: string,
+  status: "idle" | "recording" | "processing",
+): string {
+  const lower = message.toLowerCase();
+  if (status === "recording") {
+    return insertionEnabled ? "Recording…" : "Recording · cursor mode";
   }
+  if (status === "processing") {
+    return "Finishing…";
+  }
+  if (lower.includes("ready") || lower.includes("done") || lower.includes("start")) {
+    return "Ready · F9";
+  }
+  if (lower.includes("copied")) return "Copied";
+  if (lower.includes("cleared")) return "Cleared";
+  if (lower.includes("selection")) return "Selection cleared";
+  if (lower.includes("error")) return "Error";
+  return message.length > 48 ? `${message.slice(0, 45)}…` : message;
 }
 
 function setStatus(
@@ -279,19 +317,22 @@ function setStatus(
   status: "idle" | "recording" | "processing",
   options?: { remember?: boolean },
 ): void {
+  const display = shortenStatus(message, status);
+
   if (options?.remember) {
-    lastStatusMessage = message;
+    lastStatusMessage = display;
     lastStatusKind = status;
   }
 
-  statusBar.textContent = message;
-  statusBar.className = `status-bar ${status}`;
+  statusBar.textContent = display;
+  statusBar.className = "titlebar-status";
+  statusBar.classList.add(status);
+
+  statusDot.className = `status-dot ${status}`;
+
   if (clearConfirmPending) {
     statusBar.classList.add("confirm-pending");
-  }
-  if (!insertionEnabled && status === "recording") {
-    statusBar.classList.add("cursor-mode");
-    statusBar.textContent = message + " (cursor mode — not inserting)";
+    statusBar.textContent = CLEAR_CONFIRM_MESSAGE;
   }
 }
 
@@ -303,7 +344,7 @@ function setRecordingUI(recording: boolean): void {
 function startClearConfirm(): void {
   clearConfirmPending = true;
   btnClear.classList.add("btn-clear-pending");
-  btnClear.textContent = "Enter to confirm";
+  btnClear.textContent = "Confirm";
   setStatus(CLEAR_CONFIRM_MESSAGE, lastStatusKind);
   statusBar.classList.add("confirm-pending");
 }
@@ -322,7 +363,7 @@ function confirmClear(): void {
   btnClear.textContent = "Clear";
   window.dictaThesis.clearSession();
   clearHudChunks();
-  setStatus("Transcript and context cleared", "idle", { remember: true });
+  setStatus("Cleared", "idle", { remember: true });
 }
 
 // ── Event handlers ──
@@ -345,7 +386,7 @@ window.dictaThesis.onStatusChange((data) => {
 
 window.dictaThesis.onError((data) => {
   cancelClearConfirm();
-  setStatus("Error", "idle", { remember: true });
+  setStatus(data.message, "idle", { remember: true });
   setRecordingUI(false);
 
   clearEmptyState();

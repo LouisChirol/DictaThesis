@@ -236,8 +236,60 @@ def build_prompt(
 
 
 # ---------------------------------------------------------------------------
-# Command → text application (fallback when full_text is missing)
+# Cool path — Mistral Medium paragraph polish (owned suffix only)
 # ---------------------------------------------------------------------------
+
+SYSTEM_PROMPT_POLISH = """\
+You rewrite one academic paragraph that was produced by live dictation (speech-to-text \
+then a fast cleanup pass). Fix grammar, duplicated clauses, and punctuation that was \
+guessed at chunk boundaries. Keep the author's meaning, language, and technical terms.
+
+## Rules
+- Return JSON only, matching the schema.
+- `rewritten` is the full paragraph to paste in place of the original (no quotes around it).
+- Do not add new claims, citations, or headings.
+- Do not drop technical terms from the vocabulary.
+- If the paragraph is already correct, set `changed` to false and copy the original into `rewritten`.
+- Preserve markdown already present (e.g. leading `## `).
+"""
+
+POLISH_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "rewritten": {"type": "string"},
+        "changed": {"type": "boolean"},
+    },
+    "required": ["rewritten", "changed"],
+}
+
+
+def build_polish_prompt(
+    paragraph: str,
+    settings,
+    preceding_tail: str = "",
+) -> tuple[str, str]:
+    """Build (system_prompt, user_message) for the Medium paragraph rewrite."""
+    context_parts: list[str] = []
+    if preceding_tail:
+        context_parts.append(
+            "### Text immediately before this paragraph (do not repeat):\n"
+            f"...{preceding_tail}"
+        )
+    vocabulary = settings.get("vocabulary")
+    if vocabulary:
+        terms = ", ".join(vocabulary)
+        context_parts.append(
+            f"### Technical vocabulary — keep these exact spellings:\n{terms}"
+        )
+    lang = settings.get("language")
+    context_parts.append(f"### Expected language: {lang}")
+    extra = "\n\n".join(context_parts)
+    user = (
+        f"{extra}\n\n### Paragraph to rewrite:\n{paragraph}"
+        if extra
+        else f"### Paragraph to rewrite:\n{paragraph}"
+    )
+    return SYSTEM_PROMPT_POLISH, user
 
 
 def apply_commands(

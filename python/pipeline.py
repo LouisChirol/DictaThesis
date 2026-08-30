@@ -2,16 +2,18 @@
 Two-pass dictation pipeline.
 
 Each audio chunk goes through:
-  RECEIVED → TRANSCRIBING (Voxtral Mini) → DRAFT → REFINING (batched Medium) → FINAL → INJECTED
+  RECEIVED → TRANSCRIBING (Voxtral Mini) → DRAFT → REFINING (batched Small) → FINAL → INJECTED
 
 STT runs per chunk in parallel. Refinement batches consecutive drafts (debounced) so
-punctuation and phrasing span chunk boundaries. Injection is strictly ordered; slow
+punctuation and phrasing span chunk boundaries. After a pause, Medium may rewrite the
+last owned paragraph in place. Injection is strictly ordered; slow
 refinement falls back to draft text after timeouts so later chunks are not blocked.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import re
 import string
 import time
@@ -19,9 +21,10 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import partial
 
 import api_client
-from context_reader import read_focused_text
+from context_reader import get_foreground_window_info, read_focused_text
 from injector import inject_text
 from text_editor import TextFieldEditor
 
@@ -42,9 +45,15 @@ DELIMITER_PAIRS = (("(", ")"), ("«", "»"), ("[", "]"))
 # Refinement batching and timeout tuning
 REFINE_TIMEOUT_S = 5.0
 HEAD_BLOCK_TIMEOUT_S = 3.0
-REFINE_BATCH_MAX_CHUNKS = 4
-REFINE_BATCH_DEBOUNCE_S = 0.6
+REFINE_BATCH_MAX_CHUNKS = 6
+REFINE_BATCH_DEBOUNCE_S = 0.8
 SESSION_COMPLETE_TIMEOUT_S = 120.0
+INJECTED_TAIL_CHARS = 800
+POLISH_IDLE_S = 2.5
+POLISH_TIMEOUT_S = 8.0
+POLISH_MIN_CHARS = 80
+POLISH_MAX_CHARS = 2500
+FIELD_READ_TIMEOUT_S = 2.0
 
 
 def _result_has_named_command(result: dict) -> bool:
@@ -63,6 +72,33 @@ def _coalesce_refine_result(result: dict, combined_draft: str) -> tuple[dict, st
         return result, full_text or ""
     fallback = {**result, "full_text": combined_draft}
     return fallback, combined_draft
+
+
+def last_paragraph_slice(buffer: str, max_chars: int = POLISH_MAX_CHARS) -> tuple[int, str]:
+    """Return (start_index, text) of the last paragraph in the session buffer."""
+    if not buffer:
+        return 0, ""
+    idx = buffer.rfind("\n\n")
+    start = idx + 2 if idx != -1 else 0
+    text = buffer[start:]
+    if len(text) > max_chars:
+        text = text[-max_chars:]
+        start = len(buffer) - len(text)
+    return start, text
+
+
+def _preview_text(text: str, n: int = 100) -> str:
+    compact = text.replace("\r", "\\r").replace("\n", "\\n")
+    if len(compact) <= n:
+        return compact
+    half = n // 2
+    return compact[:half] + "…" + compact[-half:]
+
+
+def _field_suffix_matches(field: str, paragraph: str) -> bool:
+    norm_f = field.replace("\r\n", "\n")
+    norm_p = paragraph.replace("\r\n", "\n")
+    return norm_f.endswith(norm_p)
 
 
 class ChunkState(Enum):
@@ -124,13 +160,23 @@ class Pipeline:
         self._draft_ready: dict[int, Chunk] = {}
         self._refine_event = asyncio.Event()
         self._refine_lock = asyncio.Lock()
+        self._mutation_lock = asyncio.Lock()
+        self._polish_lock = asyncio.Lock()
 
         self._editor = TextFieldEditor()
         self._active = False
         self._tasks: list[asyncio.Task] = []
         self._inject_task: asyncio.Task | None = None
         self._refine_task: asyncio.Task | None = None
+        self._polish_task: asyncio.Task | None = None
         self._complete_task: asyncio.Task | None = None
+        self._rewrite_eligible = False
+        self._inject_focus_id: str | None = None
+        self._inject_focus_title: str | None = None
+        self._last_inject_at: float = 0.0
+        self._last_polished_hash: str | None = None
+        self._last_polish_log_key: tuple | None = None
+        self._last_polish_attempt_at: float = 0.0
 
     # ------------------------------------------------------------------
     # Session control
@@ -147,6 +193,13 @@ class Pipeline:
         self._draft_ready = {}
         self._index_to_chunk = {}
         self._tasks = []
+        self._rewrite_eligible = False
+        self._inject_focus_id = None
+        self._inject_focus_title = None
+        self._last_inject_at = 0.0
+        self._last_polished_hash = None
+        self._last_polish_log_key = None
+        self._last_polish_attempt_at = 0.0
         try:
             prefix = read_focused_text()
             if prefix:
@@ -161,6 +214,7 @@ class Pipeline:
         self._cancel_worker_tasks()
         self._inject_task = loop.create_task(self._injection_worker())
         self._refine_task = loop.create_task(self._refine_worker())
+        self._polish_task = loop.create_task(self._polish_worker())
 
     def stop_session(self):
         if not self._active:
@@ -174,7 +228,7 @@ class Pipeline:
         self._complete_task = loop.create_task(self._complete_session())
 
     async def _cancel_worker_tasks(self):
-        for task in (self._inject_task, self._refine_task, self._complete_task):
+        for task in (self._inject_task, self._refine_task, self._polish_task, self._complete_task):
             if task and not task.done():
                 task.cancel()
                 try:
@@ -183,6 +237,7 @@ class Pipeline:
                     pass
         self._inject_task = None
         self._refine_task = None
+        self._polish_task = None
         self._complete_task = None
 
     def _has_inflight_transcribe_tasks(self) -> bool:
@@ -211,6 +266,8 @@ class Pipeline:
         if self._has_inflight_work():
             print("[pipeline] Session drain timeout — forcing remaining chunks")
             await self._force_drain_remaining()
+
+        await self._try_polish("session_stop")
 
         print("[pipeline] Session complete")
         if self._on_state_change:
@@ -241,12 +298,20 @@ class Pipeline:
         if self._settings.get("enable_injection"):
             inject_text(text)
         self._session_buffer += text
+        self._last_inject_at = time.time()
+        self._rewrite_eligible = True
+        self._capture_inject_focus()
 
     def clear_context(self) -> None:
         """Clear session memory used for STT/LLM continuity (not pasted document text)."""
         self._session_buffer = ""
         self._session_context = []
         self._document_prefix = ""
+        self._rewrite_eligible = False
+        self._last_polished_hash = None
+        self._last_inject_at = 0.0
+        self._last_polish_log_key = None
+        self._last_polish_attempt_at = 0.0
         try:
             prefix = read_focused_text()
             if prefix:
@@ -279,7 +344,7 @@ class Pipeline:
     def _document_tail(self, max_chars: int = 1000) -> str:
         return (self._document_prefix[-500:] + self._session_buffer)[-max_chars:]
 
-    def _injected_tail(self, max_chars: int = 200) -> str:
+    def _injected_tail(self, max_chars: int = INJECTED_TAIL_CHARS) -> str:
         return self._document_tail(max_chars=max_chars)[-max_chars:]
 
     @staticmethod
@@ -400,7 +465,8 @@ class Pipeline:
 
                 print(
                     f"[pipeline] Refining batch {batch_indices[0]}-{batch_indices[-1]} "
-                    f"({len(batch_indices)} chunks): {combined_draft[:80]!r}"
+                    f"({len(batch_indices)} chunks, model={api_client.REFINEMENT_MODEL}): "
+                    f"{combined_draft[:80]!r}"
                 )
 
                 api_key = self._settings.get("api_key")
@@ -623,6 +689,196 @@ class Pipeline:
             elif content:
                 await self._inject_with_spacing(content, idx)
 
+    def _capture_inject_focus(self) -> None:
+        wid, title = get_foreground_window_info()
+        self._inject_focus_id = wid
+        self._inject_focus_title = title
+        print(
+            f"[polish] caret_anchor hwnd={wid!r} title={title!r} "
+            f"buffer_chars={len(self._session_buffer)}"
+        )
+
+    async def _polish_worker(self):
+        """After a pause with no in-flight chunks, rewrite the last owned paragraph."""
+        while self._active:
+            await asyncio.sleep(0.35)
+            if not self._active:
+                break
+            if self._has_inflight_work():
+                continue
+            if self._last_inject_at <= 0:
+                continue
+            if time.time() - self._last_inject_at < POLISH_IDLE_S:
+                continue
+            await self._try_polish("idle")
+
+    async def _try_polish(self, reason: str) -> None:
+        async with self._polish_lock:
+            await self._try_polish_locked(reason)
+
+    async def _try_polish_locked(self, reason: str) -> None:
+        loop = asyncio.get_event_loop()
+        start, paragraph = last_paragraph_slice(self._session_buffer)
+        para_hash = hashlib.sha256(paragraph.encode("utf-8")).hexdigest()[:12]
+        stripped_len = len(paragraph.strip())
+        log_key_base = (reason, para_hash)
+
+        def skip(code: str, extra: str = "") -> None:
+            key = (*log_key_base, code)
+            if self._last_polish_log_key == key:
+                return
+            self._last_polish_log_key = key
+            suffix = f" {extra}" if extra else ""
+            print(f"[polish] skip reason={code}{suffix}")
+
+        if not self._rewrite_eligible:
+            skip("not_eligible")
+            return
+        if stripped_len < POLISH_MIN_CHARS:
+            skip("too_short", f"min={POLISH_MIN_CHARS} stripped={stripped_len}")
+            return
+        if para_hash == self._last_polished_hash:
+            return
+        if self._has_inflight_work() and reason != "session_stop":
+            skip("inflight_work")
+            return
+        if not self._settings.get("enable_injection"):
+            skip("injection_disabled")
+            return
+        if reason == "idle" and time.time() - self._last_polish_attempt_at < POLISH_IDLE_S:
+            return
+        self._last_polish_attempt_at = time.time()
+
+        print(
+            f"[polish] consider reason={reason} eligible={self._rewrite_eligible} "
+            f"start={start} chars={len(paragraph)} stripped={stripped_len} "
+            f"hash={para_hash} preview={_preview_text(paragraph)!r}"
+        )
+
+        hwnd_now, title_now = await loop.run_in_executor(None, get_foreground_window_info)
+        hwnd_match = bool(
+            self._inject_focus_id and hwnd_now and hwnd_now == self._inject_focus_id
+        )
+        print(
+            f"[polish] focus inject_hwnd={self._inject_focus_id!r} "
+            f"inject_title={self._inject_focus_title!r} "
+            f"now_hwnd={hwnd_now!r} now_title={title_now!r} hwnd_match={hwnd_match}"
+        )
+
+        field = await loop.run_in_executor(
+            None, partial(read_focused_text, timeout=FIELD_READ_TIMEOUT_S)
+        )
+        if field is None:
+            print("[polish] field_read=unavailable")
+            if not hwnd_match:
+                if (
+                    hwnd_now
+                    and self._inject_focus_id
+                    and hwnd_now != self._inject_focus_id
+                ):
+                    self._rewrite_eligible = False
+                    skip("focus_changed", "flushed_eligible")
+                    return
+                skip("no_caret_confidence")
+                return
+            print("[polish] caret_confidence=hwnd_only")
+        else:
+            suffix_ok = _field_suffix_matches(field, paragraph)
+            print(
+                f"[polish] field_read=ok field_chars={len(field)} "
+                f"suffix_match={suffix_ok} field_tail={_preview_text(field[-120:])!r}"
+            )
+            if not suffix_ok:
+                self._rewrite_eligible = False
+                skip("field_suffix_mismatch", "flushed_eligible")
+                return
+            print("[polish] caret_confidence=field_suffix")
+
+        api_key = self._settings.get("api_key")
+        if not api_key:
+            skip("no_api_key")
+            return
+
+        preceding = (self._document_prefix + self._session_buffer[:start])[-400:]
+        print(
+            f"[polish] api_call model={api_client.POLISH_MODEL} "
+            f"timeout={POLISH_TIMEOUT_S}s preceding_chars={len(preceding)}"
+        )
+        try:
+            parsed = await asyncio.wait_for(
+                api_client.polish_paragraph(
+                    paragraph,
+                    api_key,
+                    self._settings,
+                    preceding_tail=preceding,
+                ),
+                timeout=POLISH_TIMEOUT_S,
+            )
+        except TimeoutError:
+            skip("api_timeout", f"seconds={POLISH_TIMEOUT_S}")
+            return
+        except Exception as e:
+            skip("api_error", f"error={e}")
+            return
+
+        if not parsed:
+            skip("api_empty")
+            return
+
+        rewritten = parsed.get("rewritten") or ""
+        changed = bool(parsed.get("changed", rewritten != paragraph))
+        print(
+            f"[polish] api_ok changed={changed} rewritten_chars={len(rewritten)} "
+            f"preview={_preview_text(rewritten)!r}"
+        )
+        if not rewritten.strip():
+            skip("empty_rewrite")
+            return
+        if not changed or rewritten == paragraph:
+            self._last_polished_hash = para_hash
+            skip("unchanged", "marked_polished")
+            return
+
+        async with self._mutation_lock:
+            if self._has_inflight_work() and reason != "session_stop":
+                skip("raced_inflight")
+                return
+            current = self._session_buffer[start:]
+            if current != paragraph:
+                skip(
+                    "buffer_changed",
+                    f"expected={_preview_text(paragraph)!r} got={_preview_text(current)!r}",
+                )
+                return
+            print(
+                f"[polish] apply replace_backwards count={len(paragraph)} "
+                f"new_chars={len(rewritten)}"
+            )
+            await loop.run_in_executor(
+                None, self._editor.replace_backwards, len(paragraph), rewritten
+            )
+            self._session_buffer = self._session_buffer[:start] + rewritten
+            self._last_polished_hash = hashlib.sha256(rewritten.encode("utf-8")).hexdigest()[
+                :12
+            ]
+            self._last_inject_at = time.time()
+
+        post_field = await loop.run_in_executor(
+            None, partial(read_focused_text, timeout=FIELD_READ_TIMEOUT_S)
+        )
+        if post_field is None:
+            print("[polish] post_read=unavailable applied=assumed")
+        else:
+            post_ok = _field_suffix_matches(post_field, rewritten)
+            print(
+                f"[polish] post_read=ok suffix_match={post_ok} "
+                f"field_chars={len(post_field)} tail={_preview_text(post_field[-120:])!r}"
+            )
+        print(
+            f"[polish] done reason={reason} hash={self._last_polished_hash} "
+            f"buffer_chars={len(self._session_buffer)}"
+        )
+
     def _has_unfinalized_chunks(self) -> bool:
         return any(
             i not in self._finalized
@@ -643,7 +899,13 @@ class Pipeline:
                 result = self._finalized.pop(self._next_inject_index)
                 idx = self._next_inject_index
                 self._next_inject_index += 1
-                await self._dispatch_result(result, idx)
+                before = self._session_buffer
+                async with self._mutation_lock:
+                    await self._dispatch_result(result, idx)
+                if self._session_buffer != before:
+                    self._last_inject_at = time.time()
+                    self._rewrite_eligible = True
+                    self._capture_inject_focus()
 
             if not self._active and not self._has_unfinalized_chunks():
                 await asyncio.sleep(0.1)

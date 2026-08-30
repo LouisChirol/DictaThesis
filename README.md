@@ -11,9 +11,11 @@ Works in **any** application: Google Docs, Word, Overleaf, TeXStudio, email, VSC
 1. Press **F9** (configurable) to start dictation
 2. Speak your paper naturally — punctuation is inferred, not dictated word-by-word
 3. **1st pass**: Voxtral Mini Transcribe 2 transcribes each chunk (vocabulary via `context_bias`)
-4. **2nd pass**: Mistral Medium refines into thesis register, adds smart punctuation, and handles voice commands
-5. The refined text is injected into whatever app is focused
+4. **Hot path**: Mistral Small refines into thesis register, adds smart punctuation, and handles voice commands; text is injected at the cursor
+5. **Cool path**: after a pause (or on Stop), Mistral Medium may rewrite the last paragraph we just injected, by selecting backwards from the caret. This only runs if we still own that suffix (same window and/or field text still ends with our paragraph). Clicking away flushes that window.
 6. Press **F9** again (or click Stop in the HUD) to end
+
+While dictating, keep the caret at the end of the injected text. Switching windows or clicking elsewhere in the document disables the rewrite until you dictate again.
 
 Speak full sentences. You do **not** need to say "point" or "virgule" — the system adds French/English academic punctuation. Use distinctive phrases only for structure and editing (see below).
 
@@ -107,14 +109,14 @@ Or edit directly: `~/.config/dictathesis/config.json` (Linux/macOS) or `%APPDATA
 DictaThesis/
   python/                    # Python backend (sidecar process)
     sidecar.py               — headless IPC bridge (stdin/stdout JSONL)
-    pipeline.py              — two-pass state machine (Voxtral Mini → Medium)
+    pipeline.py              — Voxtral Mini → Small emit; Medium last-paragraph polish
     audio.py                 — sounddevice capture + VAD chunking
     api_client.py            — async Mistral API calls (httpx)
     injector.py              — clipboard + Ctrl/Cmd+V text injection
-    prompt.py                — STT + refinement prompt assembly
+    prompt.py                — STT + refinement + polish prompt assembly
     settings_store.py        — JSON config
-    context_reader.py        — focused-field context at session start
-    text_editor.py           — backspace-based editing commands
+    context_reader.py        — focused-field text + foreground window (caret guard)
+    text_editor.py           — backspace-based editing and in-place paragraph replace
 
   app/                       # Electron frontend
     src/main/
@@ -139,7 +141,8 @@ DictaThesis/
 | Audio capture | `sounddevice` (PortAudio) |
 | Voice activity | Silero / WebRTC / energy VAD |
 | 1st pass STT | Voxtral Mini Transcribe 2 |
-| 2nd pass LLM | Mistral Medium |
+| 2nd pass LLM | Mistral Small |
+| Paragraph polish | Mistral Medium (owned suffix only) |
 | Text injection | `pyperclip` + `pynput` |
 | Global hotkey | Electron `globalShortcut` |
 

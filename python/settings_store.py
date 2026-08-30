@@ -9,11 +9,24 @@ import os
 import platform
 from pathlib import Path
 
-COMMANDS_VERSION = 2
+COMMANDS_VERSION = 3
 
 # Distinctive voice commands — no spoken point/virgule; punctuation is inferred by the LLM.
 DEFAULT_DICTATION_COMMANDS = [
     # --- Structure ---
+    {
+        "id": "newline",
+        "triggers": [
+            "à la ligne",
+            "a la ligne",
+            "retour à la ligne",
+            "nouvelle ligne",
+            "new line",
+        ],
+        "category": "formatting",
+        "action": {"type": "insert_text", "text": "\n"},
+        "description": "Insert a line break",
+    },
     {
         "id": "new_paragraph",
         "triggers": ["nouveau paragraphe", "new paragraph"],
@@ -146,7 +159,6 @@ LEGACY_COMMAND_IDS = frozenset(
         "semicolon",
         "slash",
         "backslash",
-        "newline",
         "bold_start",
         "bold_end",
         "italic_start",

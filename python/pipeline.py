@@ -47,6 +47,24 @@ REFINE_BATCH_DEBOUNCE_S = 0.6
 SESSION_COMPLETE_TIMEOUT_S = 120.0
 
 
+def _result_has_named_command(result: dict) -> bool:
+    return any(
+        seg.get("command", "none") not in (None, "", "none")
+        for seg in result.get("segments", [])
+    )
+
+
+def _coalesce_refine_result(result: dict, combined_draft: str) -> tuple[dict, str]:
+    """Keep whitespace-only full_text (line/paragraph breaks). Fall back to draft otherwise."""
+    full_text = result.get("full_text")
+    if full_text:
+        return result, full_text
+    if _result_has_named_command(result):
+        return result, full_text or ""
+    fallback = {**result, "full_text": combined_draft}
+    return fallback, combined_draft
+
+
 class ChunkState(Enum):
     RECEIVED = "received"
     TRANSCRIBING = "transcribing"
@@ -403,7 +421,7 @@ class Pipeline:
                         ),
                         timeout=REFINE_TIMEOUT_S,
                     )
-                    final_text = result.get("full_text") or combined_draft
+                    result, final_text = _coalesce_refine_result(result, combined_draft)
                 except TimeoutError:
                     print(
                         f"[pipeline] Refinement timeout ({REFINE_TIMEOUT_S}s) "
@@ -502,15 +520,19 @@ class Pipeline:
         )
 
     async def _inject_with_spacing(self, text: str, idx: int):
-        """Inject text with whitespace heuristic and buffer tracking."""
-        if not text.strip():
+        """Inject text with whitespace heuristic and buffer tracking.
+
+        Whitespace-only payloads (line break / paragraph) must still be pasted.
+        """
+        if not text:
             return
 
         if self._needs_space_before(text):
             text = " " + text
 
         if self._settings.get("enable_injection"):
-            print(f"[pipeline] Injecting chunk {idx}: {text[:60]!r}...")
+            preview = text[:60] if text.strip() else text
+            print(f"[pipeline] Injecting chunk {idx}: {preview!r}...")
             await asyncio.get_event_loop().run_in_executor(None, inject_text, text)
             print(f"[pipeline] Injection done for chunk {idx}")
         else:
@@ -566,44 +588,40 @@ class Pipeline:
 
         if not has_special_commands:
             full_text = result.get("full_text", "")
-            await self._inject_with_spacing(full_text, idx)
+            if full_text:
+                await self._inject_with_spacing(full_text, idx)
+                return
+            # Command-only structure (newline / paragraph) with empty full_text
+            await self._dispatch_segments(result, idx, cmd_lookup)
             return
 
-        for seg in segments:
+        await self._dispatch_segments(result, idx, cmd_lookup)
+
+    async def _dispatch_segments(self, result: dict, idx: int, cmd_lookup: dict):
+        """Walk LLM segments and inject text or run editing/control commands."""
+        for seg in result.get("segments", []):
             cmd_id = seg.get("command", "none")
             content = seg.get("content", "")
-            cmd_def = cmd_lookup.get(cmd_id)
-
-            if seg.get("type") == "text" or cmd_id == "none":
-                if content:
-                    await self._inject_with_spacing(content, idx)
-                continue
-
-            if not cmd_def:
-                if content:
-                    await self._inject_with_spacing(content, idx)
-                continue
-
-            category = cmd_def.get("category", "")
-            action = cmd_def.get("action", {})
+            cmd_def = cmd_lookup.get(cmd_id) if cmd_id not in (None, "", "none") else None
+            action = (cmd_def or {}).get("action", {})
+            category = (cmd_def or {}).get("category", "")
 
             if category == "formatting":
                 text = action.get("text", content)
                 if "__N__" in text:
                     text = text.replace("__N__", content)
                 await self._inject_with_spacing(text, idx)
-
             elif category == "control":
                 pass
-
             elif category == "editing":
                 await self._handle_editing_command(cmd_id, content, action, idx)
-
             elif category == "llm_instructed":
                 full_text = result.get("full_text", "")
                 if full_text:
                     await self._inject_with_spacing(full_text, idx)
                 break
+            elif content:
+                await self._inject_with_spacing(content, idx)
 
     def _has_unfinalized_chunks(self) -> bool:
         return any(

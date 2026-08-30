@@ -23,6 +23,7 @@ Speak full sentences. You do **not** need to say "point" or "virgule" — the sy
 
 | Say | Result |
 |---|---|
+| "à la ligne" / "new line" | line break |
 | "nouveau paragraphe" / "new paragraph" | paragraph break |
 | "titre un" / "heading one" | `# ` prefix |
 | "titre deux" / "heading two" | `## ` prefix |

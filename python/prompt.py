@@ -71,8 +71,11 @@ def build_command_prompt_section(commands: list[dict]) -> str:
     sections = []
     if formatting_lines:
         sections.append(
-            "### Structure and delimiter commands (apply in `full_text` as plain text):\n"
+            "### Structure and delimiter commands (MUST appear in `full_text` as the "
+            "actual characters, including when the utterance is ONLY the command):\n"
             + "\n".join(formatting_lines)
+            + "\n- A lone line-break command → `full_text` is a single newline (`\\n`), not empty."
+            "\n- A lone paragraph command → `full_text` is two newlines (`\\n\\n`), not empty."
         )
     if editing_lines:
         sections.append(
@@ -118,7 +121,7 @@ or leave open if the chunk is clearly incomplete.
 
 ## Voice commands (no prefix word required)
 Recognize these phrases even if STT slightly misspells them. \
-"le point principal" is text; "nouveau paragraphe" is a command.
+"le point principal" is text; "nouveau paragraphe" / "à la ligne" are commands.
 
 {commands}
 
@@ -126,6 +129,8 @@ Recognize these phrases even if STT slightly misspells them. \
 - Return JSON matching the schema exactly.
 - `full_text`: complete ready-to-insert text with formatting commands already applied \
 (newlines, headings, \\cite{{refN}}, delimiters, $ for equations).
+- Structure commands are NOT empty: even a command-only utterance must put the inserted \
+characters in `full_text` (one newline for line break, two for a new paragraph).
 - Editing and control commands appear ONLY in `segments` with empty `full_text` if the \
 utterance is purely a command.
 - `segments`: breakdown of text vs commands.

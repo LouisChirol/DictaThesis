@@ -1,5 +1,5 @@
 /**
- * HUD renderer — handles chunk display, status updates, and button interactions.
+ * HUD renderer — chunk display, compact status bar, and controls.
  */
 
 interface ChunkData {
@@ -12,16 +12,17 @@ interface ChunkData {
 const chunks = new Map<string, ChunkData>();
 const chunksContainer = document.getElementById("chunks")!;
 const statusBar = document.getElementById("status-bar")!;
+const statusDot = document.getElementById("status-dot")!;
 const btnStart = document.getElementById("btn-start") as HTMLButtonElement;
 const btnStop = document.getElementById("btn-stop") as HTMLButtonElement;
 const btnInsert = document.getElementById("btn-insert") as HTMLButtonElement;
-const btnCopySelected = document.getElementById("btn-copy-selected") as HTMLButtonElement;
-const btnCopyAll = document.getElementById("btn-copy-all") as HTMLButtonElement;
-const btnUnselectAll = document.getElementById("btn-unselect-all") as HTMLButtonElement;
 const btnClear = document.getElementById("btn-clear") as HTMLButtonElement;
 const insertMenu = document.getElementById("insert-menu")!;
 const btnInsertMenu = document.getElementById("btn-insert-menu") as HTMLButtonElement;
 const insertMenuPanel = document.getElementById("insert-menu-panel")!;
+const copyMenu = document.getElementById("copy-menu")!;
+const btnCopyMenu = document.getElementById("btn-copy-menu") as HTMLButtonElement;
+const copyMenuPanel = document.getElementById("copy-menu-panel")!;
 const btnPin = document.getElementById("btn-pin") as HTMLButtonElement;
 const btnSettings = document.getElementById("btn-settings") as HTMLButtonElement;
 const btnQuit = document.getElementById("btn-quit") as HTMLButtonElement;
@@ -29,23 +30,43 @@ const btnQuit = document.getElementById("btn-quit") as HTMLButtonElement;
 let hasChunks = false;
 let insertionEnabled = true;
 let clearConfirmPending = false;
-let lastStatusMessage = "Ready — press Start or F9 to begin dictation";
+let lastStatusMessage = "";
 let lastStatusKind: "idle" | "recording" | "processing" = "idle";
 const selectedChunkIds = new Set<string>();
 
-const CLEAR_CONFIRM_MESSAGE = "Press Enter to clear transcript and context";
+function tr(key: string): string {
+  return window.i18n.t(key);
+}
 
-// ── Window drag (JS fallback — -webkit-app-region: drag is broken on Linux/WSL) ──
+function refreshHudLabels(): void {
+  applyHudI18n();
+  updateInsertButton();
+  const pinned = btnPin.classList.contains("pinned");
+  btnPin.title = tr(pinned ? "hud.pin.pinned" : "hud.pin.unpinned");
+  if (clearConfirmPending) {
+    btnClear.classList.add("btn-clear-pending");
+    btnClear.title = tr("status.clearConfirm");
+    const glyph = btnClear.querySelector(".btn-glyph");
+    if (glyph) glyph.textContent = "✓";
+    statusBar.textContent = tr("status.clearConfirm");
+  } else if (lastStatusMessage) {
+    statusBar.textContent = lastStatusMessage;
+  }
+}
 
-const titlebar = document.querySelector(".titlebar") as HTMLElement;
+// ── Window drag ──
+
+const dragHandles = document.querySelectorAll<HTMLElement>(".window-drag");
 let isDragging = false;
 
-titlebar.addEventListener("mousedown", (e: MouseEvent) => {
-  const target = e.target as HTMLElement;
-  if (target.closest(".titlebar-buttons")) return;
+dragHandles.forEach((handle) => {
+  handle.addEventListener("mousedown", (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest(".titlebar-buttons, .hud-brand-actions")) return;
 
-  isDragging = true;
-  window.dictaThesis.startDrag(e.screenX, e.screenY);
+    isDragging = true;
+    window.dictaThesis.startDrag(e.screenX, e.screenY);
+  });
 });
 
 document.addEventListener("mousemove", (e: MouseEvent) => {
@@ -58,20 +79,108 @@ document.addEventListener("mouseup", () => {
   isDragging = false;
 });
 
-// ── Insert menu ──
+// ── Dropdown menus ──
+
+const DROPDOWN_MARGIN = 6;
+const DROPDOWN_GAP = 6;
+
+function positionDropdownPanel(panel: HTMLElement, anchor: HTMLElement): void {
+  panel.classList.add("dropdown-panel--fixed");
+  panel.hidden = false;
+
+  // Measure at natural size before clamping position
+  panel.style.visibility = "hidden";
+  panel.style.left = "0";
+  panel.style.top = "0";
+
+  const anchorRect = anchor.getBoundingClientRect();
+  const panelRect = panel.getBoundingClientRect();
+  const maxTop = window.innerHeight - DROPDOWN_MARGIN - panelRect.height;
+  const minTop = DROPDOWN_MARGIN;
+
+  let left = anchorRect.right + DROPDOWN_GAP;
+  if (left + panelRect.width > window.innerWidth - DROPDOWN_MARGIN) {
+    left = anchorRect.left - panelRect.width - DROPDOWN_GAP;
+  }
+  left = Math.max(DROPDOWN_MARGIN, Math.min(left, window.innerWidth - panelRect.width - DROPDOWN_MARGIN));
+
+  let top = anchorRect.top;
+  if (top > maxTop) top = maxTop;
+  if (top < minTop) top = minTop;
+
+  panel.style.left = `${left}px`;
+  panel.style.top = `${top}px`;
+  panel.style.visibility = "";
+}
+
+function resetDropdownPanel(panel: HTMLElement): void {
+  panel.classList.remove("dropdown-panel--fixed");
+  panel.style.left = "";
+  panel.style.top = "";
+  panel.style.visibility = "";
+}
 
 function setInsertMenuOpen(open: boolean): void {
-  insertMenuPanel.hidden = !open;
-  btnInsertMenu.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    positionDropdownPanel(insertMenuPanel, btnInsertMenu);
+    btnInsertMenu.setAttribute("aria-expanded", "true");
+  } else {
+    insertMenuPanel.hidden = true;
+    resetDropdownPanel(insertMenuPanel);
+    btnInsertMenu.setAttribute("aria-expanded", "false");
+  }
 }
 
 function closeInsertMenu(): void {
   setInsertMenuOpen(false);
 }
 
+function setCopyMenuOpen(open: boolean): void {
+  if (open) {
+    positionDropdownPanel(copyMenuPanel, btnCopyMenu);
+    btnCopyMenu.setAttribute("aria-expanded", "true");
+  } else {
+    copyMenuPanel.hidden = true;
+    resetDropdownPanel(copyMenuPanel);
+    btnCopyMenu.setAttribute("aria-expanded", "false");
+  }
+}
+
+function closeCopyMenu(): void {
+  setCopyMenuOpen(false);
+}
+
+function repositionOpenMenus(): void {
+  if (!insertMenuPanel.hidden) {
+    positionDropdownPanel(insertMenuPanel, btnInsertMenu);
+  }
+  if (!copyMenuPanel.hidden) {
+    positionDropdownPanel(copyMenuPanel, btnCopyMenu);
+  }
+}
+
+window.addEventListener("resize", repositionOpenMenus);
+
 btnInsertMenu.addEventListener("click", (e) => {
   e.stopPropagation();
-  setInsertMenuOpen(insertMenuPanel.hidden);
+  closeCopyMenu();
+  if (insertMenuPanel.hidden) {
+    btnInsertMenu.scrollIntoView({ block: "nearest" });
+    setInsertMenuOpen(true);
+  } else {
+    closeInsertMenu();
+  }
+});
+
+btnCopyMenu.addEventListener("click", (e) => {
+  e.stopPropagation();
+  closeInsertMenu();
+  if (copyMenuPanel.hidden) {
+    btnCopyMenu.scrollIntoView({ block: "nearest" });
+    setCopyMenuOpen(true);
+  } else {
+    closeCopyMenu();
+  }
 });
 
 insertMenuPanel.querySelectorAll<HTMLButtonElement>(".insert-menu-item").forEach((btn) => {
@@ -84,9 +193,37 @@ insertMenuPanel.querySelectorAll<HTMLButtonElement>(".insert-menu-item").forEach
   });
 });
 
+copyMenuPanel.querySelectorAll<HTMLButtonElement>(".copy-menu-item").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const action = btn.dataset.copy;
+    closeCopyMenu();
+    if (action === "selected") {
+      const text = getSelectedChunkText();
+      if (!text) {
+        setStatus(tr("status.nothingSelected"), "idle");
+        return;
+      }
+      await copyText(text);
+    } else if (action === "all") {
+      const text = getAllChunkText();
+      if (!text) {
+        setStatus(tr("status.nothingToCopy"), "idle");
+        return;
+      }
+      await copyText(text);
+    } else if (action === "unselect") {
+      clearSelection();
+      setStatus(tr("status.selectionCleared"), "idle");
+    }
+  });
+});
+
 document.addEventListener("click", (e) => {
   if (!insertMenu.contains(e.target as Node)) {
     closeInsertMenu();
+  }
+  if (!copyMenu.contains(e.target as Node)) {
+    closeCopyMenu();
   }
 });
 
@@ -98,26 +235,6 @@ btnInsert.addEventListener("click", () => {
   insertionEnabled = !insertionEnabled;
   updateInsertButton();
   window.dictaThesis.saveSettings({ enable_injection: insertionEnabled });
-});
-btnCopySelected.addEventListener("click", async () => {
-  const selectedText = getSelectedChunkText();
-  if (!selectedText) {
-    setStatus("No chunk selected", "idle");
-    return;
-  }
-  await copyText(selectedText);
-});
-btnCopyAll.addEventListener("click", async () => {
-  const text = getAllChunkText();
-  if (!text) {
-    setStatus("No text to copy yet", "idle");
-    return;
-  }
-  await copyText(text);
-});
-btnUnselectAll.addEventListener("click", () => {
-  clearSelection();
-  setStatus("Selection cleared", "idle");
 });
 btnClear.addEventListener("click", () => {
   if (clearConfirmPending) {
@@ -152,8 +269,7 @@ function clearHudChunks(): void {
   chunks.clear();
   clearSelection();
   hasChunks = false;
-  chunksContainer.innerHTML =
-    '<div class="empty-state">Transcribed text will appear here</div>';
+  chunksContainer.innerHTML = `<div class="empty-state" data-i18n="hud.empty">${tr("hud.empty")}</div>`;
 }
 
 function clearEmptyState(): void {
@@ -184,7 +300,7 @@ function addOrUpdateChunk(chunkId: string, text: string, state: "draft" | "final
     el.className = `chunk chunk-${state}`;
     el.textContent = text;
     el.dataset.chunkId = chunkId;
-    el.title = "Click to select for copy";
+    el.title = tr("hud.chunkSelect");
     el.addEventListener("click", () => toggleChunkSelection(chunkId));
     chunksContainer.appendChild(el);
 
@@ -252,26 +368,43 @@ function getAllChunkText(): string {
 
 async function copyText(text: string): Promise<void> {
   const ok = await window.dictaThesis.copyText(text);
-  setStatus(ok ? "Copied to clipboard" : "Copy failed", "idle");
+  setStatus(ok ? tr("status.copied") : tr("status.copyFailed"), "idle");
 }
 
 function setPinButtonState(pinned: boolean): void {
   btnPin.classList.toggle("pinned", pinned);
-  btnPin.title = pinned ? "Always on top (pinned)" : "Not pinned";
+  btnPin.title = tr(pinned ? "hud.pin.pinned" : "hud.pin.unpinned");
 }
 
 function updateInsertButton(): void {
   btnInsert.classList.toggle("active", insertionEnabled);
-  btnInsert.textContent = insertionEnabled ? "Insert ON" : "Insert OFF";
-  btnInsert.title = insertionEnabled
-    ? "Cursor insertion enabled"
-    : "Cursor insertion disabled (cursor mode)";
+  btnInsert.title = tr(
+    insertionEnabled ? "hud.insert.title.on" : "hud.insert.title.off",
+  );
+}
 
-  if (!insertionEnabled && btnStart.disabled === false) {
-    statusBar.classList.toggle("cursor-mode", true);
-  } else {
-    statusBar.classList.toggle("cursor-mode", false);
+function shortenStatus(
+  message: string,
+  status: "idle" | "recording" | "processing",
+): string {
+  if (status === "recording") {
+    return tr(insertionEnabled ? "status.recording" : "status.recording.cursor");
   }
+  if (status === "processing") {
+    return tr("status.finishing");
+  }
+  const localized = window.i18n.localizeMessage(message);
+  const lower = localized.toLowerCase();
+  if (lower.includes("ready") || lower.includes("prêt") || lower.includes("done")) {
+    return tr("status.ready");
+  }
+  if (lower.includes("copié") || lower.includes("copied")) return tr("status.copied");
+  if (lower.includes("effacé") || lower.includes("cleared")) return tr("status.cleared");
+  if (lower.includes("sélection") || lower.includes("selection")) {
+    return tr("status.selectionCleared");
+  }
+  if (lower.includes("error") || lower.includes("erreur")) return tr("status.error");
+  return localized.length > 48 ? `${localized.slice(0, 45)}…` : localized;
 }
 
 function setStatus(
@@ -279,19 +412,22 @@ function setStatus(
   status: "idle" | "recording" | "processing",
   options?: { remember?: boolean },
 ): void {
+  const display = shortenStatus(message, status);
+
   if (options?.remember) {
-    lastStatusMessage = message;
+    lastStatusMessage = display;
     lastStatusKind = status;
   }
 
-  statusBar.textContent = message;
-  statusBar.className = `status-bar ${status}`;
+  statusBar.textContent = display;
+  statusBar.className = "titlebar-status";
+  statusBar.classList.add(status);
+
+  statusDot.className = `status-dot ${status}`;
+
   if (clearConfirmPending) {
     statusBar.classList.add("confirm-pending");
-  }
-  if (!insertionEnabled && status === "recording") {
-    statusBar.classList.add("cursor-mode");
-    statusBar.textContent = message + " (cursor mode — not inserting)";
+    statusBar.textContent = tr("status.clearConfirm");
   }
 }
 
@@ -303,8 +439,10 @@ function setRecordingUI(recording: boolean): void {
 function startClearConfirm(): void {
   clearConfirmPending = true;
   btnClear.classList.add("btn-clear-pending");
-  btnClear.textContent = "Enter to confirm";
-  setStatus(CLEAR_CONFIRM_MESSAGE, lastStatusKind);
+  btnClear.title = tr("status.clearConfirm");
+  const glyph = btnClear.querySelector(".btn-glyph");
+  if (glyph) glyph.textContent = "✓";
+  setStatus(tr("status.clearConfirm"), lastStatusKind);
   statusBar.classList.add("confirm-pending");
 }
 
@@ -312,17 +450,21 @@ function cancelClearConfirm(): void {
   if (!clearConfirmPending) return;
   clearConfirmPending = false;
   btnClear.classList.remove("btn-clear-pending");
-  btnClear.textContent = "Clear";
+  btnClear.title = tr("hud.clear.title");
+  const glyph = btnClear.querySelector(".btn-glyph");
+  if (glyph) glyph.textContent = "⌫";
   setStatus(lastStatusMessage, lastStatusKind);
 }
 
 function confirmClear(): void {
   clearConfirmPending = false;
   btnClear.classList.remove("btn-clear-pending");
-  btnClear.textContent = "Clear";
+  btnClear.title = tr("hud.clear.title");
+  const glyph = btnClear.querySelector(".btn-glyph");
+  if (glyph) glyph.textContent = "⌫";
   window.dictaThesis.clearSession();
   clearHudChunks();
-  setStatus("Transcript and context cleared", "idle", { remember: true });
+  setStatus(tr("status.cleared"), "idle", { remember: true });
 }
 
 // ── Event handlers ──
@@ -345,13 +487,14 @@ window.dictaThesis.onStatusChange((data) => {
 
 window.dictaThesis.onError((data) => {
   cancelClearConfirm();
-  setStatus("Error", "idle", { remember: true });
+  const message = window.i18n.localizeMessage(data.message);
+  setStatus(message, "idle", { remember: true });
   setRecordingUI(false);
 
   clearEmptyState();
   const el = document.createElement("div");
   el.className = "chunk chunk-error";
-  el.textContent = data.message;
+  el.textContent = message;
   chunksContainer.appendChild(el);
   chunksContainer.scrollTop = chunksContainer.scrollHeight;
 });
@@ -362,8 +505,13 @@ window.dictaThesis.onSessionCleared(() => {
 
 window.dictaThesis.onSettings((data) => {
   insertionEnabled = data.data.enable_injection ?? true;
-  updateInsertButton();
+  window.i18n.setLocale(data.data.language);
+  applyUiTheme(data.data.ui_theme);
+  refreshHudLabels();
 });
+
+window.i18n.onLocaleChange(() => refreshHudLabels());
 
 window.dictaThesis.getSettings();
 window.dictaThesis.isPinned().then(setPinButtonState).catch(() => setPinButtonState(true));
+refreshHudLabels();

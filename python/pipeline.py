@@ -44,6 +44,7 @@ REFINE_TIMEOUT_S = 5.0
 HEAD_BLOCK_TIMEOUT_S = 3.0
 REFINE_BATCH_MAX_CHUNKS = 4
 REFINE_BATCH_DEBOUNCE_S = 0.6
+SESSION_COMPLETE_TIMEOUT_S = 120.0
 
 
 class ChunkState(Enum):
@@ -109,6 +110,9 @@ class Pipeline:
         self._editor = TextFieldEditor()
         self._active = False
         self._tasks: list[asyncio.Task] = []
+        self._inject_task: asyncio.Task | None = None
+        self._refine_task: asyncio.Task | None = None
+        self._complete_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
     # Session control
@@ -136,14 +140,81 @@ class Pipeline:
         if self._on_state_change:
             self._on_state_change(True)
         loop = asyncio.get_event_loop()
+        self._cancel_worker_tasks()
         self._inject_task = loop.create_task(self._injection_worker())
         self._refine_task = loop.create_task(self._refine_worker())
 
     def stop_session(self):
+        if not self._active:
+            return
         self._active = False
         self._refine_event.set()
+        self._inject_event.set()
+        loop = asyncio.get_event_loop()
+        if self._complete_task and not self._complete_task.done():
+            self._complete_task.cancel()
+        self._complete_task = loop.create_task(self._complete_session())
+
+    async def _cancel_worker_tasks(self):
+        for task in (self._inject_task, self._refine_task, self._complete_task):
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        self._inject_task = None
+        self._refine_task = None
+        self._complete_task = None
+
+    def _has_inflight_transcribe_tasks(self) -> bool:
+        return any(not t.done() for t in self._tasks)
+
+    def _has_inflight_work(self) -> bool:
+        if self._draft_ready or self._has_inflight_transcribe_tasks():
+            return True
+        return any(
+            i not in self._finalized
+            for i in range(self._next_inject_index, self._chunk_counter)
+        )
+
+    async def _complete_session(self):
+        """Wait for STT, refinement, and injection to finish after Stop."""
+        print("[pipeline] Session completing — draining pending chunks")
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+
+        deadline = time.time() + SESSION_COMPLETE_TIMEOUT_S
+        while self._has_inflight_work() and time.time() < deadline:
+            self._refine_event.set()
+            self._inject_event.set()
+            await asyncio.sleep(0.15)
+
+        if self._has_inflight_work():
+            print("[pipeline] Session drain timeout — forcing remaining chunks")
+            await self._force_drain_remaining()
+
+        print("[pipeline] Session complete")
         if self._on_state_change:
             self._on_state_change(False)
+
+    async def _force_drain_remaining(self):
+        """Last resort: emit drafts and empty results so injection can finish."""
+        for index in range(self._next_inject_index, self._chunk_counter):
+            if index in self._finalized:
+                continue
+            if await self._force_emit_draft(index):
+                continue
+            chunk = self._index_to_chunk.get(index)
+            if chunk and chunk.state == ChunkState.TRANSCRIBING:
+                chunk.state = ChunkState.ERROR
+            self._signal_finalized(index, "")
+
+        deadline = time.time() + 10.0
+        while self._has_inflight_work() and time.time() < deadline:
+            self._refine_event.set()
+            self._inject_event.set()
+            await asyncio.sleep(0.15)
 
     def inject_literal(self, text: str) -> None:
         """Inject literal text from HUD quick-insert menu (outside chunk flow)."""
@@ -272,7 +343,8 @@ class Pipeline:
         while True:
             if not self._draft_ready:
                 if not self._active:
-                    break
+                    await asyncio.sleep(0.1)
+                    continue
                 self._refine_event.clear()
                 await self._refine_event.wait()
                 continue
@@ -556,7 +628,9 @@ class Pipeline:
                 await self._dispatch_result(result, idx)
 
             if not self._active and not self._has_unfinalized_chunks():
-                break
+                await asyncio.sleep(0.1)
+                if not self._has_unfinalized_chunks():
+                    break
 
             waiting_idx = self._next_inject_index
             later_ready = any(i > waiting_idx for i in self._finalized)

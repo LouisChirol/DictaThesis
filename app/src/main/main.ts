@@ -3,7 +3,7 @@
  * Creates the HUD overlay, settings window, tray icon, and manages the Python sidecar.
  */
 
-import { app, BrowserWindow, globalShortcut } from "electron";
+import { app, BrowserWindow, globalShortcut, nativeImage } from "electron";
 import * as path from "path";
 import * as fs from "fs";
 import { SidecarManager } from "./sidecar";
@@ -36,12 +36,20 @@ let appIsQuitting = false;
 
 const preloadPath = path.join(__dirname, "preload.js");
 
+function getAppIcon(): Electron.NativeImage | undefined {
+  const iconPath = path.join(__dirname, "..", "renderer", "assets", "icon.png");
+  if (!fs.existsSync(iconPath)) return undefined;
+  return nativeImage.createFromPath(iconPath);
+}
+
 function createHudWindow(): BrowserWindow {
+  const icon = getAppIcon();
   const win = new BrowserWindow({
-    width: 620,
-    height: 420,
-    minWidth: 560,
-    minHeight: 360,
+    width: 500,
+    height: 260,
+    minWidth: 380,
+    minHeight: 168,
+    icon: icon ?? undefined,
     frame: false,
     transparent: false, // solid bg for cross-platform compat (WSL2/Wayland)
     alwaysOnTop: true,
@@ -72,12 +80,14 @@ function createHudWindow(): BrowserWindow {
 }
 
 function createSettingsWindow(): BrowserWindow {
+  const icon = getAppIcon();
   const win = new BrowserWindow({
     width: 560,
     height: 680,
     show: false,
     frame: true,
     resizable: true,
+    icon: icon ?? undefined,
     backgroundColor: "#1e1e2e",
     webPreferences: {
       preload: preloadPath,
@@ -132,12 +142,12 @@ app.whenReady().then(() => {
   sidecar = new SidecarManager();
   sidecar.start();
 
-  // Set up IPC bridge
-  setupIpcHandlers(sidecar, hudWindow, settingsWindow, openSettings, quit);
-
   // System tray
   tray = new TrayManager(sidecar, hudWindow, openSettings, quit);
   tray.start();
+
+  // Set up IPC bridge
+  setupIpcHandlers(sidecar, hudWindow, settingsWindow, tray, openSettings, quit);
 
   // Global shortcut (default F9)
   registerShortcut("f9", toggleDictation);

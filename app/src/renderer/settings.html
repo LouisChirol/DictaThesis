@@ -1,53 +1,54 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="mocha">
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
   <link rel="stylesheet" href="styles/global.css" />
+  <link rel="stylesheet" href="styles/themes.css" />
   <link rel="stylesheet" href="styles/settings.css" />
   <title>DictaThesis — Settings</title>
 </head>
 <body>
   <div class="settings">
-    <div class="settings-header">DictaThesis &middot; Settings</div>
+    <div class="settings-header" data-i18n="settings.title">DictaThesis &middot; Settings</div>
 
     <!-- API Key -->
     <div class="section">
-      <div class="section-title">Mistral API Key</div>
+      <div class="section-title" data-i18n="settings.apiKey">Mistral API Key</div>
       <div class="field">
         <div class="api-key-wrapper">
           <input type="password" id="api-key" placeholder="sk-..." />
-          <button class="api-key-toggle" id="api-key-toggle">Show</button>
+          <button class="api-key-toggle" id="api-key-toggle" data-i18n="settings.show">Show</button>
         </div>
       </div>
     </div>
 
     <!-- Language -->
     <div class="section">
-      <div class="section-title">Language</div>
+      <div class="section-title" data-i18n="settings.language">Language</div>
       <div class="field">
         <div class="radio-group">
-          <label><input type="radio" name="language" value="fr" checked /> Fran&ccedil;ais</label>
-          <label><input type="radio" name="language" value="en" /> English</label>
-          <label><input type="radio" name="language" value="auto" /> Auto-detect</label>
+          <label><input type="radio" name="language" value="fr" checked /> <span data-i18n="settings.lang.fr">Fran&ccedil;ais</span></label>
+          <label><input type="radio" name="language" value="en" /> <span data-i18n="settings.lang.en">English</span></label>
+          <label><input type="radio" name="language" value="auto" /> <span data-i18n="settings.lang.auto">Auto-detect</span></label>
         </div>
       </div>
     </div>
 
     <!-- Shortcut Key -->
     <div class="section">
-      <div class="section-title">Global Shortcut Key</div>
+      <div class="section-title" data-i18n="settings.shortcut">Global Shortcut Key</div>
       <div class="field">
-        <input type="text" id="shortcut-key" value="f9" placeholder="e.g. f9, scroll_lock" />
+        <input type="text" id="shortcut-key" value="f9" data-i18n-placeholder="settings.shortcut.placeholder" placeholder="e.g. f9, scroll_lock" />
       </div>
     </div>
 
     <!-- VAD Silence Duration -->
     <div class="section">
-      <div class="section-title">Silence Duration (VAD)</div>
+      <div class="section-title" data-i18n="settings.vadSilence">Silence Duration (VAD)</div>
       <div class="field">
-        <label>Seconds of silence before a chunk is emitted</label>
+        <label data-i18n="settings.vadSilence.help">Seconds of silence before a chunk is emitted</label>
         <div class="slider-wrapper">
           <input type="range" id="vad-silence" min="0.5" max="4.0" step="0.1" value="1.5" />
           <span class="slider-value" id="vad-silence-value">1.5s</span>
@@ -57,9 +58,9 @@
 
     <!-- Max Chunk Duration -->
     <div class="section">
-      <div class="section-title">Maximum Chunk Duration</div>
+      <div class="section-title" data-i18n="settings.maxChunk">Maximum Chunk Duration</div>
       <div class="field">
-        <label>Hard chunk cut even without silence (helps long monologues stream continuously)</label>
+        <label data-i18n="settings.maxChunk.help">Hard chunk cut even without silence (helps long monologues stream continuously)</label>
         <div class="slider-wrapper">
           <input type="range" id="max-chunk-duration" min="3.0" max="30.0" step="0.5" value="12.0" />
           <span class="slider-value" id="max-chunk-duration-value">12.0s</span>
@@ -69,45 +70,59 @@
 
     <!-- VAD Backend -->
     <div class="section">
-      <div class="section-title">VAD Backend</div>
+      <div class="section-title" data-i18n="settings.vadBackend">VAD Backend</div>
       <div class="field">
-        <label for="vad-backend">Detection engine used to split speech and silence</label>
+        <label for="vad-backend" data-i18n="settings.vadBackend.help">Detection engine used to split speech and silence</label>
         <select id="vad-backend">
-          <option value="energy">Energy (fast, no extra dependency)</option>
-          <option value="webrtc">WebRTC VAD</option>
-          <option value="silero">Silero ONNX VAD</option>
+          <option value="energy" data-i18n-label="settings.vad.energy">Energy (fast, no extra dependency)</option>
+          <option value="webrtc" data-i18n-label="settings.vad.webrtc">WebRTC VAD</option>
+          <option value="silero" data-i18n-label="settings.vad.silero">Silero ONNX VAD</option>
         </select>
+      </div>
+    </div>
+
+    <!-- Appearance -->
+    <div class="section">
+      <div class="section-title" data-i18n="settings.appearance">Appearance</div>
+      <div class="field">
+        <label data-i18n="settings.appearance.help">Color theme (HUD + settings)</label>
+        <div class="radio-group">
+          <label><input type="radio" name="ui-theme" value="mocha" checked /> <span data-i18n="settings.theme.mocha">Mocha — dark IDE style</span></label>
+          <label><input type="radio" name="ui-theme" value="parchment" /> <span data-i18n="settings.theme.parchment">Parchment — warm paper &amp; ink</span></label>
+        </div>
       </div>
     </div>
 
     <!-- Custom Vocabulary -->
     <div class="section">
-      <div class="section-title">Custom Vocabulary</div>
+      <div class="section-title" data-i18n="settings.vocabulary">Custom Vocabulary</div>
       <div class="field">
-        <label>One term per line — guides transcription (context bias) and thesis refinement</label>
-        <textarea id="vocabulary" placeholder="e.g.&#10;Transformer&#10;BERT&#10;fine-tuning"></textarea>
+        <label data-i18n="settings.vocabulary.help">One term per line — guides transcription (context bias) and thesis refinement</label>
+        <textarea id="vocabulary" data-i18n-placeholder="settings.vocabulary.placeholder" placeholder="e.g.&#10;Transformer&#10;BERT&#10;fine-tuning"></textarea>
       </div>
     </div>
 
     <!-- Bibliography -->
     <div class="section">
-      <div class="section-title">Bibliography</div>
+      <div class="section-title" data-i18n="settings.bibliography">Bibliography</div>
       <div class="field">
-        <label>BibTeX entries for citation references</label>
-        <textarea id="bibliography" placeholder="Paste BibTeX or load a .bib file"></textarea>
+        <label data-i18n="settings.bibliography.help">BibTeX entries for citation references</label>
+        <textarea id="bibliography" data-i18n-placeholder="settings.bibliography.placeholder" placeholder="Paste BibTeX or load a .bib file"></textarea>
         <div class="btn-row">
-          <button class="btn-secondary" id="btn-load-bib">Load .bib file</button>
+          <button class="btn-secondary" id="btn-load-bib" data-i18n="settings.loadBib">Load .bib file</button>
         </div>
       </div>
     </div>
 
     <!-- Save -->
-    <button class="btn-save" id="btn-save">Save Settings</button>
+    <button class="btn-save" id="btn-save" data-i18n="settings.save">Save Settings</button>
   </div>
 
   <!-- Toast -->
-  <div class="toast" id="toast">Settings saved</div>
+  <div class="toast" id="toast" data-i18n="settings.saved">Settings saved</div>
 
+  <script src="theme-apply.js"></script>
+  <script src="i18n-apply.js"></script>
   <script src="app/settings.js"></script>
 </body>
 </html>

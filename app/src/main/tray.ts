@@ -1,9 +1,11 @@
 /**
- * System tray icon with state-based icons and context menu.
+ * System tray icon with Turgot avatar and context menu.
  */
 
 import { Tray, Menu, nativeImage, BrowserWindow } from "electron";
+import * as fs from "fs";
 import * as path from "path";
+import { t, uiLocaleFromSetting, type UiLocale } from "../i18n";
 import { SidecarManager } from "./sidecar";
 
 type AppStatus = "idle" | "recording" | "processing";
@@ -11,6 +13,7 @@ type AppStatus = "idle" | "recording" | "processing";
 export class TrayManager {
   private tray: Tray | null = null;
   private status: AppStatus = "idle";
+  private locale: UiLocale = "en";
   private icons: Record<AppStatus, Electron.NativeImage>;
 
   constructor(
@@ -19,17 +22,50 @@ export class TrayManager {
     private onOpenSettings: () => void,
     private onQuit: () => void,
   ) {
-    this.icons = {
-      idle: this.createIcon("#6c7086", "#89b4fa"),       // gray body, blue accent
-      recording: this.createIcon("#f38ba8", "#f38ba8"),  // red
-      processing: this.createIcon("#6c7086", "#fab387"), // gray body, orange accent
+    this.icons = this.loadIcons();
+  }
+
+  private loadIcons(): Record<AppStatus, Electron.NativeImage> {
+    const tray32 = path.join(__dirname, "..", "renderer", "assets", "tray-icon.png");
+    const tray64 = path.join(__dirname, "..", "renderer", "assets", "tray-icon@2x.png");
+    const avatarPath = path.join(__dirname, "..", "renderer", "assets", "turgot-avatar.png");
+
+    let trayIcon: Electron.NativeImage | null = null;
+    if (fs.existsSync(tray32)) {
+      trayIcon = nativeImage.createFromPath(tray32);
+    } else if (fs.existsSync(avatarPath)) {
+      trayIcon = nativeImage.createFromPath(avatarPath).resize({
+        width: 32,
+        height: 32,
+        quality: "best",
+      });
+    }
+
+    if (trayIcon && !trayIcon.isEmpty()) {
+      if (fs.existsSync(tray64)) {
+        trayIcon.addRepresentation({
+          scaleFactor: 2.0,
+          width: 32,
+          height: 32,
+          buffer: fs.readFileSync(tray64),
+        });
+      }
+      return {
+        idle: trayIcon,
+        recording: trayIcon,
+        processing: trayIcon,
+      };
+    }
+
+    return {
+      idle: this.createFallbackIcon("#6c7086", "#89b4fa"),
+      recording: this.createFallbackIcon("#f38ba8", "#f38ba8"),
+      processing: this.createFallbackIcon("#6c7086", "#fab387"),
     };
   }
 
-  /**
-   * Create a 22x22 tray icon as a filled circle with an accent dot.
-   */
-  private createIcon(bodyColor: string, accentColor: string): Electron.NativeImage {
+  /** Fallback tray glyph when avatar asset is missing. */
+  private createFallbackIcon(bodyColor: string, accentColor: string): Electron.NativeImage {
     const size = 22;
     const svg = `
       <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
@@ -66,13 +102,18 @@ export class TrayManager {
     }
   }
 
+  setLocale(language: string | undefined | null): void {
+    this.locale = uiLocaleFromSetting(language);
+    this.updateMenu();
+  }
+
   private updateMenu(): void {
     if (!this.tray) return;
 
     const isRecording = this.status === "recording";
     const menu = Menu.buildFromTemplate([
       {
-        label: isRecording ? "Stop Dictation" : "Start Dictation",
+        label: isRecording ? t("tray.stop", this.locale) : t("tray.start", this.locale),
         click: () => {
           this.sidecar.send({
             cmd: isRecording ? "stop_dictation" : "start_dictation",
@@ -81,12 +122,12 @@ export class TrayManager {
       },
       { type: "separator" },
       {
-        label: "Settings",
+        label: t("tray.settings", this.locale),
         click: () => this.onOpenSettings(),
       },
       { type: "separator" },
       {
-        label: "Quit",
+        label: t("tray.quit", this.locale),
         click: () => this.onQuit(),
       },
     ]);

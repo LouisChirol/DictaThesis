@@ -18,10 +18,15 @@ const toast = document.getElementById("toast") as HTMLDivElement;
 
 // ── API key toggle ──
 
+function refreshApiKeyToggle(): void {
+  const isPassword = apiKeyInput.type === "password";
+  apiKeyToggle.textContent = window.i18n.t(isPassword ? "settings.show" : "settings.hide");
+}
+
 apiKeyToggle.addEventListener("click", () => {
   const isPassword = apiKeyInput.type === "password";
   apiKeyInput.type = isPassword ? "text" : "password";
-  apiKeyToggle.textContent = isPassword ? "Hide" : "Show";
+  refreshApiKeyToggle();
 });
 
 // ── Slider live value ──
@@ -50,6 +55,10 @@ btnSave.addEventListener("click", () => {
     'input[name="language"]:checked'
   ) as HTMLInputElement | null;
 
+  const themeRadio = document.querySelector(
+    'input[name="ui-theme"]:checked'
+  ) as HTMLInputElement | null;
+
   const data: Record<string, unknown> = {
     api_key: apiKeyInput.value,
     language: languageRadio?.value || "fr",
@@ -57,6 +66,7 @@ btnSave.addEventListener("click", () => {
     vad_silence_duration: parseFloat(vadSlider.value),
     max_chunk_duration: parseFloat(maxChunkSlider.value),
     vad_backend: vadBackendSelect.value || "energy",
+    ui_theme: themeRadio?.value || "mocha",
     vocabulary: vocabularyArea.value
       .split("\n")
       .map((s) => s.trim())
@@ -65,7 +75,10 @@ btnSave.addEventListener("click", () => {
   };
 
   window.dictaThesis.saveSettings(data);
-  showToast("Settings saved");
+  applyUiTheme(themeRadio?.value);
+  window.i18n.setLocale(languageRadio?.value ?? "auto");
+  applySettingsI18n();
+  showToast(window.i18n.t("settings.saved"));
 });
 
 // ── Toast ──
@@ -96,9 +109,25 @@ window.dictaThesis.onSettings((data) => {
   maxChunkValue.textContent = `${maxChunkSlider.value}s`;
   vadBackendSelect.value = s.vad_backend || "energy";
 
+  const themeRadio = document.querySelector(
+    `input[name="ui-theme"][value="${s.ui_theme || "mocha"}"]`
+  ) as HTMLInputElement | null;
+  if (themeRadio) themeRadio.checked = true;
+  applyUiTheme(s.ui_theme);
+
   vocabularyArea.value = (s.vocabulary || []).join("\n");
   bibliographyArea.value = s.bibliography || "";
+
+  window.i18n.setLocale(s.language);
+  applySettingsI18n();
+  refreshApiKeyToggle();
+});
+
+window.i18n.onLocaleChange(() => {
+  applySettingsI18n();
+  refreshApiKeyToggle();
 });
 
 // Request settings on load
 window.dictaThesis.getSettings();
+applySettingsI18n();

@@ -4,14 +4,17 @@
   "description": "Smart voice dictation for thesis writing",
   "main": "dist/main/main.js",
   "scripts": {
-    "copy-static": "shx cp src/renderer/index.html src/renderer/settings.html dist/renderer/ && shx cp -r src/renderer/styles dist/renderer/",
+    "copy-static": "shx cp src/renderer/index.html src/renderer/settings.html dist/renderer/ && shx cp -r src/renderer/styles dist/renderer/ && shx cp -r src/renderer/assets dist/renderer/",
     "build": "tsc && npm run copy-static",
+    "icons": "node scripts/vectorize-icon.mjs",
     "start": "npm run build && electron .",
     "dev": "npm run build && electron .",
     "watch": "tsc -w"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "electron": "^28.3.3",
+    "potrace": "^2.1.8",
     "shx": "^0.4.0",
     "typescript": "^5.5.0"
   }

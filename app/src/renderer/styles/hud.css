@@ -7,11 +7,85 @@ body {
 
 .hud {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   height: 100vh;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--bg-base);
+}
+
+.hud-brand {
+  width: 54px;
+  flex-shrink: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 10px;
+  background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-base) 100%);
+  border-right: 1px solid var(--border);
+  border-radius: var(--radius) 0 0 var(--radius);
+  overflow: hidden;
+}
+
+.hud-brand-drag {
+  flex-shrink: 0;
+}
+
+.hud-brand-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  padding: 0 5px 2px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 55%, transparent) transparent;
+  -webkit-app-region: no-drag;
+}
+
+.hud-brand-actions::-webkit-scrollbar {
+  width: 4px;
+}
+
+.hud-brand-actions::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
+  border-radius: 2px;
+}
+
+.hud-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center top;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
+  image-rendering: auto;
+}
+
+.hud-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.window-drag {
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+
+.window-drag:active {
+  cursor: grabbing;
 }
 
 /* ── Title bar ── */
@@ -24,14 +98,7 @@ body {
   padding: 6px 8px;
   background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-base) 100%);
   border-bottom: 1px solid var(--border);
-  -webkit-app-region: drag;
-  border-radius: var(--radius) var(--radius) 0 0;
-  cursor: grab;
   min-height: 36px;
-}
-
-.titlebar:active {
-  cursor: grabbing;
 }
 
 .titlebar-brand {
@@ -40,18 +107,6 @@ body {
   gap: 8px;
   min-width: 0;
   flex: 1;
-}
-
-.titlebar-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  object-fit: cover;
-  object-position: center top;
-  border: 1px solid var(--border);
-  flex-shrink: 0;
-  -webkit-app-region: no-drag;
-  image-rendering: auto;
 }
 
 .titlebar-label {
@@ -218,18 +273,37 @@ body {
   filter: none;
 }
 
-/* ── Toolbar ── */
+/* ── Sidebar action buttons ── */
 
-.toolbar-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border);
+.btn-side {
+  width: 44px;
+  height: 30px;
+  padding: 0;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
 }
 
-/* ── Dropdown menus ── */
+.btn-glyph {
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+.btn-side.btn-toggle {
+  min-width: 0;
+}
+
+.btn-side.btn-clear-pending .btn-glyph {
+  font-size: 16px;
+}
+
+.hud-brand-actions .insert-menu,
+.hud-brand-actions .copy-menu {
+  width: 44px;
+}
+
+/* ── Dropdown menus (open to the right of sidebar) ── */
 
 .insert-menu,
 .copy-menu {
@@ -239,15 +313,25 @@ body {
 .insert-menu-panel,
 .copy-menu-panel {
   position: absolute;
-  top: calc(100% + 3px);
-  left: 0;
+  top: 0;
+  left: calc(100% + 6px);
   z-index: 20;
   min-width: 120px;
+  max-height: calc(100vh - 12px);
+  overflow-y: auto;
   padding: 4px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.insert-menu-panel.dropdown-panel--fixed,
+.copy-menu-panel.dropdown-panel--fixed {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
 }
 
 .insert-menu-panel {

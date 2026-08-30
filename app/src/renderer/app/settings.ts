@@ -18,10 +18,15 @@ const toast = document.getElementById("toast") as HTMLDivElement;
 
 // ── API key toggle ──
 
+function refreshApiKeyToggle(): void {
+  const isPassword = apiKeyInput.type === "password";
+  apiKeyToggle.textContent = window.i18n.t(isPassword ? "settings.show" : "settings.hide");
+}
+
 apiKeyToggle.addEventListener("click", () => {
   const isPassword = apiKeyInput.type === "password";
   apiKeyInput.type = isPassword ? "text" : "password";
-  apiKeyToggle.textContent = isPassword ? "Hide" : "Show";
+  refreshApiKeyToggle();
 });
 
 // ── Slider live value ──
@@ -71,7 +76,9 @@ btnSave.addEventListener("click", () => {
 
   window.dictaThesis.saveSettings(data);
   applyUiTheme(themeRadio?.value);
-  showToast("Settings saved");
+  window.i18n.setLocale(languageRadio?.value ?? "auto");
+  applySettingsI18n();
+  showToast(window.i18n.t("settings.saved"));
 });
 
 // ── Toast ──
@@ -110,7 +117,17 @@ window.dictaThesis.onSettings((data) => {
 
   vocabularyArea.value = (s.vocabulary || []).join("\n");
   bibliographyArea.value = s.bibliography || "";
+
+  window.i18n.setLocale(s.language);
+  applySettingsI18n();
+  refreshApiKeyToggle();
+});
+
+window.i18n.onLocaleChange(() => {
+  applySettingsI18n();
+  refreshApiKeyToggle();
 });
 
 // Request settings on load
 window.dictaThesis.getSettings();
+applySettingsI18n();

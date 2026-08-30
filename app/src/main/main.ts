@@ -48,7 +48,7 @@ function createHudWindow(): BrowserWindow {
     width: 500,
     height: 260,
     minWidth: 380,
-    minHeight: 200,
+    minHeight: 168,
     icon: icon ?? undefined,
     frame: false,
     transparent: false, // solid bg for cross-platform compat (WSL2/Wayland)
@@ -80,12 +80,14 @@ function createHudWindow(): BrowserWindow {
 }
 
 function createSettingsWindow(): BrowserWindow {
+  const icon = getAppIcon();
   const win = new BrowserWindow({
     width: 560,
     height: 680,
     show: false,
     frame: true,
     resizable: true,
+    icon: icon ?? undefined,
     backgroundColor: "#1e1e2e",
     webPreferences: {
       preload: preloadPath,
@@ -140,12 +142,12 @@ app.whenReady().then(() => {
   sidecar = new SidecarManager();
   sidecar.start();
 
-  // Set up IPC bridge
-  setupIpcHandlers(sidecar, hudWindow, settingsWindow, openSettings, quit);
-
   // System tray
   tray = new TrayManager(sidecar, hudWindow, openSettings, quit);
   tray.start();
+
+  // Set up IPC bridge
+  setupIpcHandlers(sidecar, hudWindow, settingsWindow, tray, openSettings, quit);
 
   // Global shortcut (default F9)
   registerShortcut("f9", toggleDictation);

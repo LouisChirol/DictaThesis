@@ -11,56 +11,66 @@
 </head>
 <body>
   <div class="hud">
-    <div class="titlebar">
-      <div class="titlebar-brand">
-        <img src="assets/turgot-avatar.svg" class="titlebar-avatar" width="28" height="28" alt="" decoding="async" />
-        <span class="titlebar-label">DictaThesis</span>
-        <span id="status-dot" class="status-dot idle" aria-hidden="true"></span>
-        <span id="status-bar" class="titlebar-status">Ready · F9</span>
+    <aside class="hud-brand">
+      <div class="hud-brand-drag window-drag">
+        <img src="assets/turgot-avatar.svg" class="hud-avatar" width="42" height="42" alt="" decoding="async" />
       </div>
-      <div class="titlebar-buttons">
-        <button id="btn-start" class="btn btn-sm btn-start" title="Start dictation (F9)">Start</button>
-        <button id="btn-stop" class="btn btn-sm btn-stop" disabled title="Stop dictation">Stop</button>
-        <button id="btn-pin" class="btn btn-sm btn-icon pinned" title="Always on top (pinned)">&#128204;</button>
-        <button id="btn-settings" class="btn btn-sm btn-icon" title="Settings">&#9881;</button>
-        <button id="btn-quit" class="btn btn-sm btn-icon" title="Quit">&times;</button>
-      </div>
-    </div>
-
-    <div class="toolbar-row">
-      <button id="btn-insert" class="btn btn-sm btn-toggle active" title="Paste into focused app">Insert</button>
-      <div class="insert-menu" id="insert-menu">
-        <button id="btn-insert-menu" class="btn btn-sm btn-secondary" type="button" aria-haspopup="true" aria-expanded="false">
-          Symbols &#9662;
+      <nav class="hud-brand-actions" aria-label="Transcript actions">
+        <button id="btn-insert" class="btn btn-side btn-toggle active" type="button" data-i18n-title="hud.insert.title.on" title="Paste into focused app (on)">
+          <span class="btn-glyph" aria-hidden="true">↪</span>
         </button>
-        <div id="insert-menu-panel" class="insert-menu-panel" hidden>
-          <button type="button" class="insert-menu-item" data-insert="(">(</button>
-          <button type="button" class="insert-menu-item" data-insert=")">)</button>
-          <button type="button" class="insert-menu-item" data-insert="«">«</button>
-          <button type="button" class="insert-menu-item" data-insert="»">»</button>
-          <button type="button" class="insert-menu-item" data-insert="[">[</button>
-          <button type="button" class="insert-menu-item" data-insert="]">]</button>
+        <div class="insert-menu" id="insert-menu">
+          <button id="btn-insert-menu" class="btn btn-side btn-secondary" type="button" aria-haspopup="true" aria-expanded="false" data-i18n-title="hud.symbols" title="Symbols">
+            <span class="btn-glyph" aria-hidden="true">«»</span>
+          </button>
+          <div id="insert-menu-panel" class="insert-menu-panel" hidden>
+            <button type="button" class="insert-menu-item" data-insert="(">(</button>
+            <button type="button" class="insert-menu-item" data-insert=")">)</button>
+            <button type="button" class="insert-menu-item" data-insert="«">«</button>
+            <button type="button" class="insert-menu-item" data-insert="»">»</button>
+            <button type="button" class="insert-menu-item" data-insert="[">[</button>
+            <button type="button" class="insert-menu-item" data-insert="]">]</button>
+          </div>
+        </div>
+        <button id="btn-clear" class="btn btn-side btn-secondary" type="button" data-i18n-title="hud.clear.title" title="Clear transcript and session context">
+          <span class="btn-glyph" aria-hidden="true">⌫</span>
+        </button>
+        <div class="copy-menu" id="copy-menu">
+          <button id="btn-copy-menu" class="btn btn-side btn-secondary" type="button" aria-haspopup="true" aria-expanded="false" data-i18n-title="hud.copy" title="Copy">
+            <span class="btn-glyph" aria-hidden="true">⧉</span>
+          </button>
+          <div id="copy-menu-panel" class="copy-menu-panel" hidden>
+            <button type="button" class="copy-menu-item" data-copy="selected" data-i18n="hud.copy.selected">Copy selected</button>
+            <button type="button" class="copy-menu-item" data-copy="all" data-i18n="hud.copy.all">Copy all</button>
+            <button type="button" class="copy-menu-item" data-copy="unselect" data-i18n="hud.copy.unselect">Unselect all</button>
+          </div>
+        </div>
+      </nav>
+    </aside>
+    <div class="hud-main">
+      <div class="titlebar window-drag">
+        <div class="titlebar-brand">
+          <span class="titlebar-label">DictaThesis</span>
+          <span id="status-dot" class="status-dot idle" aria-hidden="true"></span>
+          <span id="status-bar" class="titlebar-status" data-i18n="status.ready">Ready · F9</span>
+        </div>
+        <div class="titlebar-buttons">
+          <button id="btn-start" class="btn btn-sm btn-start" data-i18n="hud.start" data-i18n-title="hud.start.title">Start</button>
+          <button id="btn-stop" class="btn btn-sm btn-stop" disabled data-i18n="hud.stop" data-i18n-title="hud.stop.title">Stop</button>
+          <button id="btn-pin" class="btn btn-sm btn-icon pinned" data-i18n-title="hud.pin.pinned">&#128204;</button>
+          <button id="btn-settings" class="btn btn-sm btn-icon" data-i18n-title="hud.settings">&#9881;</button>
+          <button id="btn-quit" class="btn btn-sm btn-icon" data-i18n-title="hud.quit">&times;</button>
         </div>
       </div>
-      <button id="btn-clear" class="btn btn-sm btn-secondary" title="Clear transcript and session context">Clear</button>
-      <div class="copy-menu" id="copy-menu">
-        <button id="btn-copy-menu" class="btn btn-sm btn-secondary" type="button" aria-haspopup="true" aria-expanded="false">
-          Copy &#9662;
-        </button>
-        <div id="copy-menu-panel" class="copy-menu-panel" hidden>
-          <button type="button" class="copy-menu-item" data-copy="selected">Copy selected</button>
-          <button type="button" class="copy-menu-item" data-copy="all">Copy all</button>
-          <button type="button" class="copy-menu-item" data-copy="unselect">Unselect all</button>
-        </div>
-      </div>
-    </div>
 
-    <div id="chunks" class="chunks">
-      <div class="empty-state">Transcribed text appears here</div>
+      <div id="chunks" class="chunks">
+        <div class="empty-state" data-i18n="hud.empty">Transcribed text appears here</div>
+      </div>
     </div>
   </div>
 
   <script src="theme-apply.js"></script>
+  <script src="i18n-apply.js"></script>
   <script src="app/hud.js"></script>
 </body>
 </html>

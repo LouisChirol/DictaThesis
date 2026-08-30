@@ -1,4 +1,29 @@
 import { contextBridge, ipcRenderer } from "electron";
+import { t, uiLocaleFromSetting, localizeBackendMessage, type MessageKey, type UiLocale } from "../i18n";
+
+let currentLocale: UiLocale = "en";
+const localeListeners = new Set<(locale: UiLocale) => void>();
+
+function setLocale(locale: UiLocale): void {
+  currentLocale = locale;
+  for (const cb of localeListeners) cb(locale);
+}
+
+ipcRenderer.on("event:locale", (_e, locale: UiLocale) => {
+  setLocale(locale);
+});
+
+contextBridge.exposeInMainWorld("i18n", {
+  get locale() {
+    return currentLocale;
+  },
+  t: (key: MessageKey) => t(key, currentLocale),
+  localizeMessage: (message: string) => localizeBackendMessage(message, currentLocale),
+  setLocale: (language: string) => setLocale(uiLocaleFromSetting(language)),
+  onLocaleChange: (cb: (locale: UiLocale) => void) => {
+    localeListeners.add(cb);
+  },
+});
 
 contextBridge.exposeInMainWorld("dictaThesis", {
   // Commands

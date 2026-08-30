@@ -4,7 +4,9 @@
 
 import { ipcMain, dialog, BrowserWindow, clipboard } from "electron";
 import * as fs from "fs";
+import { uiLocaleFromSetting } from "../i18n";
 import { SidecarManager } from "./sidecar";
+import { TrayManager } from "./tray";
 
 function applyWindowTheme(hudWindow: BrowserWindow, settingsWindow: BrowserWindow, theme: string) {
   const bg = theme === "parchment" ? "#f4f0e8" : "#1e1e2e";
@@ -16,9 +18,16 @@ export function setupIpcHandlers(
   sidecar: SidecarManager,
   hudWindow: BrowserWindow,
   settingsWindow: BrowserWindow,
+  tray: TrayManager,
   openSettings: () => void,
   quitApp: () => void,
 ): void {
+  function broadcastLocale(language: string | undefined | null): void {
+    const locale = uiLocaleFromSetting(language);
+    tray.setLocale(language);
+    hudWindow.webContents.send("event:locale", locale);
+    settingsWindow.webContents.send("event:locale", locale);
+  }
   // ── Commands from renderer → sidecar ──
 
   ipcMain.on("cmd:start_dictation", () => {
@@ -127,6 +136,7 @@ export function setupIpcHandlers(
     if (theme) {
       applyWindowTheme(hudWindow, settingsWindow, theme);
     }
+    broadcastLocale(data?.data?.language);
   });
 
   sidecar.on("session_cleared", () => {

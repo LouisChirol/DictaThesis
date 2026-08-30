@@ -5,6 +5,7 @@
 import { Tray, Menu, nativeImage, BrowserWindow } from "electron";
 import * as fs from "fs";
 import * as path from "path";
+import { t, uiLocaleFromSetting, type UiLocale } from "../i18n";
 import { SidecarManager } from "./sidecar";
 
 type AppStatus = "idle" | "recording" | "processing";
@@ -12,6 +13,7 @@ type AppStatus = "idle" | "recording" | "processing";
 export class TrayManager {
   private tray: Tray | null = null;
   private status: AppStatus = "idle";
+  private locale: UiLocale = "en";
   private icons: Record<AppStatus, Electron.NativeImage>;
 
   constructor(
@@ -100,13 +102,18 @@ export class TrayManager {
     }
   }
 
+  setLocale(language: string | undefined | null): void {
+    this.locale = uiLocaleFromSetting(language);
+    this.updateMenu();
+  }
+
   private updateMenu(): void {
     if (!this.tray) return;
 
     const isRecording = this.status === "recording";
     const menu = Menu.buildFromTemplate([
       {
-        label: isRecording ? "Stop Dictation" : "Start Dictation",
+        label: isRecording ? t("tray.stop", this.locale) : t("tray.start", this.locale),
         click: () => {
           this.sidecar.send({
             cmd: isRecording ? "stop_dictation" : "start_dictation",
@@ -115,12 +122,12 @@ export class TrayManager {
       },
       { type: "separator" },
       {
-        label: "Settings",
+        label: t("tray.settings", this.locale),
         click: () => this.onOpenSettings(),
       },
       { type: "separator" },
       {
-        label: "Quit",
+        label: t("tray.quit", this.locale),
         click: () => this.onQuit(),
       },
     ]);

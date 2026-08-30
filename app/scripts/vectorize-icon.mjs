@@ -36,11 +36,29 @@ function traceToSvg(input, output) {
   });
 }
 
-function rasterizeSvg(svg, size, output) {
-  const resvg = new Resvg(svg, {
-    fitTo: { mode: "width", value: size },
-    background: "transparent",
-  });
+/** Embed traced art in a square canvas with optional background (for taskbar / window icons). */
+function squareIconSvg(svg, size, { background = null, inset = 0.12, cornerRadius = 0.14 } = {}) {
+  const viewBoxMatch = svg.match(/viewBox="([^"]+)"/);
+  const viewBox = viewBoxMatch ? viewBoxMatch[1] : `0 0 ${size} ${size}`;
+  const inner = svg.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
+  const pad = size * inset;
+  const innerSize = size - pad * 2;
+  const radius = size * cornerRadius;
+
+  const bgRect = background
+    ? `<rect width="${size}" height="${size}" fill="${background}" rx="${radius}"/>`
+    : "";
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+${bgRect}
+<svg x="${pad}" y="${pad}" width="${innerSize}" height="${innerSize}" viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet">
+${inner}
+</svg>
+</svg>`;
+}
+
+function rasterizeSvg(svgString, output) {
+  const resvg = new Resvg(svgString);
   const png = resvg.render().asPng();
   fs.writeFileSync(output, png);
 }
@@ -57,17 +75,18 @@ async function main() {
   console.log(`Wrote ${path.relative(repoRoot, svgPath)}`);
 
   const exports = [
-    ["turgot-avatar.png", 96],
-    ["icon.png", 512],
-    ["tray-icon.png", 32],
-    ["tray-icon@2x.png", 64],
+    { name: "turgot-avatar.png", size: 96, background: null },
+    { name: "icon.png", size: 512, background: "#ffffff" },
+    { name: "tray-icon.png", size: 32, background: "#ffffff" },
+    { name: "tray-icon@2x.png", size: 64, background: "#ffffff" },
   ];
 
   console.log("Rasterizing SVG → PNG…");
-  for (const [name, size] of exports) {
+  for (const { name, size, background } of exports) {
     const out = path.join(assetsDir, name);
-    rasterizeSvg(svg, size, out);
-    console.log(`  ${name} (${size}px)`);
+    const composed = background ? squareIconSvg(svg, size, { background }) : svg;
+    rasterizeSvg(composed, out);
+    console.log(`  ${name} (${size}px${background ? ", white bg" : ""})`);
   }
 
   console.log("Done.");

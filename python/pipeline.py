@@ -5,9 +5,10 @@ Each audio chunk goes through:
   RECEIVED → TRANSCRIBING (Voxtral Mini) → DRAFT → REFINING (batched Small) → FINAL → INJECTED
 
 STT runs per chunk in parallel. Refinement batches consecutive drafts (debounced) so
-punctuation and phrasing span chunk boundaries. After a pause, Medium may rewrite the
-last owned paragraph in place. Injection is strictly ordered; slow
-refinement falls back to draft text after timeouts so later chunks are not blocked.
+punctuation and phrasing span chunk boundaries. After a pause, or about every 30s,
+Medium may rewrite a trailing owned passage in place (capped, not the whole buffer).
+Injection is strictly ordered; slow refinement falls back to draft text after timeouts
+so later chunks are not blocked.
 """
 
 from __future__ import annotations
@@ -50,9 +51,12 @@ REFINE_BATCH_DEBOUNCE_S = 0.8
 SESSION_COMPLETE_TIMEOUT_S = 120.0
 INJECTED_TAIL_CHARS = 800
 POLISH_IDLE_S = 2.5
+POLISH_INTERVAL_S = 30.0
+POLISH_QUIET_S = 1.0
 POLISH_TIMEOUT_S = 8.0
 POLISH_MIN_CHARS = 80
-POLISH_MAX_CHARS = 2500
+POLISH_MAX_CHARS = 800
+POLISH_MIN_WORD_OVERLAP = 0.35
 FIELD_READ_TIMEOUT_S = 2.0
 
 
@@ -74,17 +78,48 @@ def _coalesce_refine_result(result: dict, combined_draft: str) -> tuple[dict, st
     return fallback, combined_draft
 
 
-def last_paragraph_slice(buffer: str, max_chars: int = POLISH_MAX_CHARS) -> tuple[int, str]:
-    """Return (start_index, text) of the last paragraph in the session buffer."""
+def trailing_polish_slice(buffer: str, max_chars: int = POLISH_MAX_CHARS) -> tuple[int, str]:
+    """Return (start_index, text) of a trailing passage to rewrite, not the whole buffer."""
     if not buffer:
         return 0, ""
-    idx = buffer.rfind("\n\n")
-    start = idx + 2 if idx != -1 else 0
-    text = buffer[start:]
-    if len(text) > max_chars:
-        text = text[-max_chars:]
-        start = len(buffer) - len(text)
-    return start, text
+    if len(buffer) <= max_chars:
+        return 0, buffer
+    start = len(buffer) - max_chars
+    window = buffer[start:]
+    match = re.search(r"(?:\n\n+|[.!?]\s+)", window)
+    if match and len(window) - match.end() >= POLISH_MIN_CHARS:
+        start += match.end()
+        window = buffer[start:]
+    elif start > 0:
+        sp = window.find(" ")
+        if sp != -1 and len(window) - sp - 1 >= POLISH_MIN_CHARS:
+            start += sp + 1
+            window = buffer[start:]
+    return start, window
+
+
+def _rewrite_looks_sane(original: str, rewritten: str) -> bool:
+    """Reject clipboard leftovers / instruction-like output that barely overlaps the source."""
+    if not rewritten.strip():
+        return False
+    leak_markers = (
+        "flush the rewrite",
+        "alt-tab",
+        "system prompt",
+        "json schema",
+        "you rewrite",
+        "owned suffix",
+    )
+    low = rewritten.lower()
+    if any(marker in low for marker in leak_markers):
+        return False
+    orig_words = set(re.findall(r"\w{4,}", original.lower(), flags=re.UNICODE))
+    new_words = set(re.findall(r"\w{4,}", rewritten.lower(), flags=re.UNICODE))
+    if len(orig_words) >= 8:
+        overlap = len(orig_words & new_words) / len(orig_words)
+        if overlap < POLISH_MIN_WORD_OVERLAP:
+            return False
+    return True
 
 
 def _preview_text(text: str, n: int = 100) -> str:
@@ -177,6 +212,8 @@ class Pipeline:
         self._last_polished_hash: str | None = None
         self._last_polish_log_key: tuple | None = None
         self._last_polish_attempt_at: float = 0.0
+        self._last_polish_done_at: float = 0.0
+        self._session_started_at: float = 0.0
 
     # ------------------------------------------------------------------
     # Session control
@@ -200,6 +237,8 @@ class Pipeline:
         self._last_polished_hash = None
         self._last_polish_log_key = None
         self._last_polish_attempt_at = 0.0
+        self._last_polish_done_at = 0.0
+        self._session_started_at = time.time()
         try:
             prefix = read_focused_text()
             if prefix:
@@ -312,6 +351,7 @@ class Pipeline:
         self._last_inject_at = 0.0
         self._last_polish_log_key = None
         self._last_polish_attempt_at = 0.0
+        self._last_polish_done_at = 0.0
         try:
             prefix = read_focused_text()
             if prefix:
@@ -699,7 +739,7 @@ class Pipeline:
         )
 
     async def _polish_worker(self):
-        """After a pause with no in-flight chunks, rewrite the last owned paragraph."""
+        """Rewrite a trailing owned passage after a pause, or about every 30s."""
         while self._active:
             await asyncio.sleep(0.35)
             if not self._active:
@@ -708,9 +748,24 @@ class Pipeline:
                 continue
             if self._last_inject_at <= 0:
                 continue
-            if time.time() - self._last_inject_at < POLISH_IDLE_S:
+            now = time.time()
+            quiet = now - self._last_inject_at
+            if quiet < POLISH_QUIET_S:
                 continue
-            await self._try_polish("idle")
+            interval_due = (
+                (
+                    self._last_polish_done_at <= 0
+                    and now - self._session_started_at >= POLISH_INTERVAL_S
+                )
+                or (
+                    self._last_polish_done_at > 0
+                    and now - self._last_polish_done_at >= POLISH_INTERVAL_S
+                )
+            )
+            if quiet >= POLISH_IDLE_S:
+                await self._try_polish("idle")
+            elif interval_due:
+                await self._try_polish("interval")
 
     async def _try_polish(self, reason: str) -> None:
         async with self._polish_lock:
@@ -718,7 +773,7 @@ class Pipeline:
 
     async def _try_polish_locked(self, reason: str) -> None:
         loop = asyncio.get_event_loop()
-        start, paragraph = last_paragraph_slice(self._session_buffer)
+        start, paragraph = trailing_polish_slice(self._session_buffer)
         para_hash = hashlib.sha256(paragraph.encode("utf-8")).hexdigest()[:12]
         stripped_len = len(paragraph.strip())
         log_key_base = (reason, para_hash)
@@ -746,6 +801,12 @@ class Pipeline:
             skip("injection_disabled")
             return
         if reason == "idle" and time.time() - self._last_polish_attempt_at < POLISH_IDLE_S:
+            return
+        if (
+            reason == "interval"
+            and self._last_polish_done_at > 0
+            and time.time() - self._last_polish_done_at < POLISH_INTERVAL_S
+        ):
             return
         self._last_polish_attempt_at = time.time()
 
@@ -834,9 +895,19 @@ class Pipeline:
         if not rewritten.strip():
             skip("empty_rewrite")
             return
+        if not _rewrite_looks_sane(paragraph, rewritten):
+            skip(
+                "rewrite_mismatch",
+                f"preview={_preview_text(rewritten)!r}",
+            )
+            return
         if not changed or rewritten == paragraph:
             self._last_polished_hash = para_hash
+            self._last_polish_done_at = time.time()
             skip("unchanged", "marked_polished")
+            return
+        if len(paragraph) > POLISH_MAX_CHARS:
+            skip("window_too_large", f"chars={len(paragraph)} max={POLISH_MAX_CHARS}")
             return
 
         async with self._mutation_lock:
@@ -855,13 +926,19 @@ class Pipeline:
                 f"new_chars={len(rewritten)}"
             )
             await loop.run_in_executor(
-                None, self._editor.replace_backwards, len(paragraph), rewritten
+                None,
+                partial(
+                    self._editor.replace_backwards,
+                    len(paragraph),
+                    rewritten,
+                ),
             )
             self._session_buffer = self._session_buffer[:start] + rewritten
             self._last_polished_hash = hashlib.sha256(rewritten.encode("utf-8")).hexdigest()[
                 :12
             ]
             self._last_inject_at = time.time()
+            self._last_polish_done_at = time.time()
 
         post_field = await loop.run_in_executor(
             None, partial(read_focused_text, timeout=FIELD_READ_TIMEOUT_S)

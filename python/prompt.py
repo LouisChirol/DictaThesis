@@ -240,17 +240,18 @@ def build_prompt(
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT_POLISH = """\
-You rewrite one academic paragraph that was produced by live dictation (speech-to-text \
+You rewrite a trailing academic passage that was produced by live dictation (speech-to-text \
 then a fast cleanup pass). Fix grammar, duplicated clauses, and punctuation that was \
 guessed at chunk boundaries. Keep the author's meaning, language, and technical terms.
 
 ## Rules
 - Return JSON only, matching the schema.
-- `rewritten` is the full paragraph to paste in place of the original (no quotes around it).
+- `rewritten` is the full passage to paste in place of the original (no quotes around it).
 - Do not add new claims, citations, or headings.
 - Do not drop technical terms from the vocabulary.
-- If the paragraph is already correct, set `changed` to false and copy the original into `rewritten`.
+- If the passage is already correct, set `changed` to false and copy the original into `rewritten`.
 - Preserve markdown already present (e.g. leading `## `).
+- Never output instructions, English meta-commentary, or text that was not in the passage.
 """
 
 POLISH_RESPONSE_SCHEMA = {
@@ -272,7 +273,7 @@ def build_polish_prompt(
     context_parts: list[str] = []
     if preceding_tail:
         context_parts.append(
-            "### Text immediately before this paragraph (do not repeat):\n"
+            "### Text immediately before this passage (do not repeat):\n"
             f"...{preceding_tail}"
         )
     vocabulary = settings.get("vocabulary")
@@ -285,9 +286,9 @@ def build_polish_prompt(
     context_parts.append(f"### Expected language: {lang}")
     extra = "\n\n".join(context_parts)
     user = (
-        f"{extra}\n\n### Paragraph to rewrite:\n{paragraph}"
+        f"{extra}\n\n### Passage to rewrite:\n{paragraph}"
         if extra
-        else f"### Paragraph to rewrite:\n{paragraph}"
+        else f"### Passage to rewrite:\n{paragraph}"
     )
     return SYSTEM_PROMPT_POLISH, user
 

@@ -12,7 +12,7 @@ Works in **any** application: Google Docs, Word, Overleaf, TeXStudio, email, VSC
 2. Speak your paper naturally — punctuation is inferred, not dictated word-by-word
 3. **1st pass**: Voxtral Mini Transcribe 2 transcribes each chunk (vocabulary via `context_bias`)
 4. **Hot path**: Mistral Small refines into thesis register, adds smart punctuation, and handles voice commands; text is injected at the cursor
-5. **Cool path**: after a pause (or on Stop), Mistral Medium may rewrite the last paragraph we just injected, by selecting backwards from the caret. This only runs if we still own that suffix (same window and/or field text still ends with our paragraph). Clicking away flushes that window.
+5. **Cool path**: after a pause, on Stop, or about every 30s, Mistral Medium may rewrite a **trailing passage** we injected (about 800 characters, not the whole document), by selecting backwards from the caret. This only runs if we still own that suffix. Clicking away flushes that window.
 6. Press **F9** again (or click Stop in the HUD) to end
 
 While dictating, keep the caret at the end of the injected text. Switching windows or clicking elsewhere in the document disables the rewrite until you dictate again.

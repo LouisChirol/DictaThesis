@@ -37,11 +37,12 @@ class TextFieldEditor:
         if char_count <= 0:
             return
         self.delete_backwards(char_count)
-        time.sleep(0.05)
-        # Inject replacement text via clipboard
+        time.sleep(0.08)
         from injector import inject_text
 
-        inject_text(new_text)
+        # Writer/Word often consume Ctrl+V after our clipboard restore; wait longer.
+        restore_delay = max(0.4, min(1.0, 0.3 + len(new_text) / 2500))
+        inject_text(new_text, delay=0.12, restore_delay=restore_delay)
 
     # ------------------------------------------------------------------
     # Sentence / word boundary helpers

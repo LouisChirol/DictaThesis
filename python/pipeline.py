@@ -52,7 +52,6 @@ SESSION_COMPLETE_TIMEOUT_S = 120.0
 INJECTED_TAIL_CHARS = 800
 POLISH_IDLE_S = 2.5
 POLISH_INTERVAL_S = 30.0
-POLISH_QUIET_S = 1.0
 POLISH_TIMEOUT_S = 8.0
 POLISH_MIN_CHARS = 80
 POLISH_MAX_CHARS = 800
@@ -120,6 +119,100 @@ def _rewrite_looks_sane(original: str, rewritten: str) -> bool:
         if overlap < POLISH_MIN_WORD_OVERLAP:
             return False
     return True
+
+
+def _is_mid_sentence_tail(buffer: str) -> bool:
+    t = buffer.rstrip()
+    return bool(t) and t[-1] not in ".!?\n"
+
+
+CONTINUATION_STARTERS = frozenset(
+    {
+        "et",
+        "ou",
+        "mais",
+        "donc",
+        "car",
+        "ni",
+        "le",
+        "la",
+        "les",
+        "un",
+        "une",
+        "des",
+        "du",
+        "de",
+        "en",
+        "dans",
+        "sur",
+        "par",
+        "pour",
+        "avec",
+        "sans",
+        "au",
+        "aux",
+        "ce",
+        "cet",
+        "cette",
+        "ces",
+        "il",
+        "elle",
+        "on",
+        "ils",
+        "elles",
+        "nous",
+        "vous",
+        "je",
+        "qui",
+        "que",
+        "dont",
+        "aussi",
+        "ainsi",
+        "alors",
+        "plus",
+        "si",
+        "quand",
+        "comme",
+        "comment",
+        "and",
+        "or",
+        "but",
+        "the",
+        "a",
+        "an",
+        "of",
+        "to",
+        "for",
+        "if",
+        "when",
+        "in",
+        "at",
+        "with",
+        "this",
+        "that",
+    }
+)
+
+
+def soften_chunk_continuation(buffer: str, text: str) -> str:
+    """If we are mid-sentence, drop a spurious new-sentence capital / leading period."""
+    if not text or not buffer or not _is_mid_sentence_tail(buffer):
+        return text
+    t = text.lstrip()
+    while t and t[0] in ".,;:":
+        t = t[1:].lstrip()
+    if not t:
+        return text
+    first = re.split(r"\s+", t, maxsplit=1)[0]
+    first_alnum = re.sub(r"[^\w]", "", first, flags=re.UNICODE)
+    if t[0].isupper() and first_alnum.lower() in CONTINUATION_STARTERS:
+        print(f"[pipeline] continuation join: lowered {first_alnum!r}")
+        t = t[0].lower() + t[1:]
+    return t
+
+
+def _is_hud_title(title: str | None) -> bool:
+    return bool(title) and "dictathesis" in title.lower()
 
 
 def _preview_text(text: str, n: int = 100) -> str:
@@ -214,6 +307,7 @@ class Pipeline:
         self._last_polish_attempt_at: float = 0.0
         self._last_polish_done_at: float = 0.0
         self._session_started_at: float = 0.0
+        self._inject_in_progress = False
 
     # ------------------------------------------------------------------
     # Session control
@@ -239,6 +333,7 @@ class Pipeline:
         self._last_polish_attempt_at = 0.0
         self._last_polish_done_at = 0.0
         self._session_started_at = time.time()
+        self._inject_in_progress = False
         try:
             prefix = read_focused_text()
             if prefix:
@@ -306,6 +401,15 @@ class Pipeline:
             print("[pipeline] Session drain timeout — forcing remaining chunks")
             await self._force_drain_remaining()
 
+        await self._try_polish("session_stop")
+        extra_deadline = time.time() + 15.0
+        while (
+            (self._has_inflight_work() or self._inject_in_progress)
+            and time.time() < extra_deadline
+        ):
+            self._refine_event.set()
+            self._inject_event.set()
+            await asyncio.sleep(0.15)
         await self._try_polish("session_stop")
 
         print("[pipeline] Session complete")
@@ -633,6 +737,9 @@ class Pipeline:
         if not text:
             return
 
+        if text.strip():
+            text = soften_chunk_continuation(self._session_buffer, text)
+
         if self._needs_space_before(text):
             text = " " + text
 
@@ -731,6 +838,12 @@ class Pipeline:
 
     def _capture_inject_focus(self) -> None:
         wid, title = get_foreground_window_info()
+        if _is_hud_title(title):
+            print(
+                f"[polish] caret_anchor ignored hud hwnd={wid!r} title={title!r} "
+                f"keep={self._inject_focus_id!r} {self._inject_focus_title!r}"
+            )
+            return
         self._inject_focus_id = wid
         self._inject_focus_title = title
         print(
@@ -744,14 +857,12 @@ class Pipeline:
             await asyncio.sleep(0.35)
             if not self._active:
                 break
-            if self._has_inflight_work():
+            if self._inject_in_progress:
                 continue
             if self._last_inject_at <= 0:
                 continue
             now = time.time()
             quiet = now - self._last_inject_at
-            if quiet < POLISH_QUIET_S:
-                continue
             interval_due = (
                 (
                     self._last_polish_done_at <= 0
@@ -762,6 +873,8 @@ class Pipeline:
                     and now - self._last_polish_done_at >= POLISH_INTERVAL_S
                 )
             )
+            # Idle polish waits for a real pause. Interval polish may start while
+            # the user is still talking; new text is spliced back on apply.
             if quiet >= POLISH_IDLE_S:
                 await self._try_polish("idle")
             elif interval_due:
@@ -794,8 +907,8 @@ class Pipeline:
             return
         if para_hash == self._last_polished_hash:
             return
-        if self._has_inflight_work() and reason != "session_stop":
-            skip("inflight_work")
+        if self._inject_in_progress:
+            skip("inject_busy")
             return
         if not self._settings.get("enable_injection"):
             skip("injection_disabled")
@@ -817,6 +930,9 @@ class Pipeline:
         )
 
         hwnd_now, title_now = await loop.run_in_executor(None, get_foreground_window_info)
+        if _is_hud_title(title_now) or _is_hud_title(self._inject_focus_title):
+            skip("hud_focused", f"title={title_now!r}")
+            return
         hwnd_match = bool(
             self._inject_focus_id and hwnd_now and hwnd_now == self._inject_focus_id
         )
@@ -910,35 +1026,47 @@ class Pipeline:
             skip("window_too_large", f"chars={len(paragraph)} max={POLISH_MAX_CHARS}")
             return
 
+        snap_end = start + len(paragraph)
+
         async with self._mutation_lock:
-            if self._has_inflight_work() and reason != "session_stop":
-                skip("raced_inflight")
+            hwnd_apply, title_apply = await loop.run_in_executor(
+                None, get_foreground_window_info
+            )
+            if _is_hud_title(title_apply):
+                skip("hud_focused", f"title={title_apply!r}")
                 return
-            current = self._session_buffer[start:]
-            if current != paragraph:
+            frozen = self._session_buffer[start:snap_end]
+            if frozen != paragraph:
                 skip(
                     "buffer_changed",
-                    f"expected={_preview_text(paragraph)!r} got={_preview_text(current)!r}",
+                    f"expected={_preview_text(paragraph)!r} got={_preview_text(frozen)!r}",
                 )
                 return
+            extra = self._session_buffer[snap_end:]
+            if len(extra) > POLISH_MAX_CHARS:
+                skip("extra_too_large", f"extra={len(extra)}")
+                return
+            new_text = rewritten + extra
+            replace_count = len(paragraph) + len(extra)
             print(
-                f"[polish] apply replace_backwards count={len(paragraph)} "
-                f"new_chars={len(rewritten)}"
+                f"[polish] apply replace_backwards count={replace_count} "
+                f"new_chars={len(rewritten)} extra_chars={len(extra)}"
             )
             await loop.run_in_executor(
                 None,
                 partial(
                     self._editor.replace_backwards,
-                    len(paragraph),
-                    rewritten,
+                    replace_count,
+                    new_text,
                 ),
             )
-            self._session_buffer = self._session_buffer[:start] + rewritten
+            self._session_buffer = self._session_buffer[:start] + new_text
             self._last_polished_hash = hashlib.sha256(rewritten.encode("utf-8")).hexdigest()[
                 :12
             ]
             self._last_inject_at = time.time()
             self._last_polish_done_at = time.time()
+            applied_suffix = new_text
 
         post_field = await loop.run_in_executor(
             None, partial(read_focused_text, timeout=FIELD_READ_TIMEOUT_S)
@@ -946,7 +1074,7 @@ class Pipeline:
         if post_field is None:
             print("[polish] post_read=unavailable applied=assumed")
         else:
-            post_ok = _field_suffix_matches(post_field, rewritten)
+            post_ok = _field_suffix_matches(post_field, applied_suffix)
             print(
                 f"[polish] post_read=ok suffix_match={post_ok} "
                 f"field_chars={len(post_field)} tail={_preview_text(post_field[-120:])!r}"
@@ -977,8 +1105,12 @@ class Pipeline:
                 idx = self._next_inject_index
                 self._next_inject_index += 1
                 before = self._session_buffer
-                async with self._mutation_lock:
-                    await self._dispatch_result(result, idx)
+                self._inject_in_progress = True
+                try:
+                    async with self._mutation_lock:
+                        await self._dispatch_result(result, idx)
+                finally:
+                    self._inject_in_progress = False
                 if self._session_buffer != before:
                     self._last_inject_at = time.time()
                     self._rewrite_eligible = True

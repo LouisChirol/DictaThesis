@@ -56,7 +56,7 @@ function createHudWindow(): BrowserWindow {
     resizable: true,
     skipTaskbar: false,
     minimizable: false,
-    backgroundColor: "#1e1e2e",
+    backgroundColor: "#f4f0e8",
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -88,7 +88,7 @@ function createSettingsWindow(): BrowserWindow {
     frame: true,
     resizable: true,
     icon: icon ?? undefined,
-    backgroundColor: "#1e1e2e",
+    backgroundColor: "#f4f0e8",
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,

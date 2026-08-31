@@ -39,7 +39,7 @@ Speak full sentences. You do **not** need to say "point" or "virgule" — the sy
 | "début équation" / "start equation" | `$` |
 | "arrêter la dictée" / "stop dictation" | end session |
 
-The HUD also has one-click chips for `( )` and `« »` when you prefer not to speak delimiters.
+Speak delimiters when you need them (`ouvrir parenthèse`, `ouvrir guillemet`, …). Clicking the HUD would steal the caret, so there is no symbol palette.
 
 ---
 
@@ -100,6 +100,8 @@ Or edit directly: `~/.config/dictathesis/config.json` (Linux/macOS) or `%APPDATA
 | **Silence duration** | Pause length before chunk ends (0.5–4.0 s) |
 | **Vocabulary** | Custom terms — `context_bias` for STT + refinement in Medium |
 | **Bibliography** | BibTeX for `\cite{}` commands |
+
+Fresh install (no `config.json` yet): language **fr**, VAD **webrtc**, silence **0.5 s**, max chunk **6 s**, theme **parchment**, HUD pinned and paste-on, empty API key / vocabulary / bibliography.
 
 ---
 

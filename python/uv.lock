@@ -106,6 +106,7 @@ dependencies = [
     { name = "pyperclip" },
     { name = "setuptools" },
     { name = "sounddevice" },
+    { name = "webrtcvad" },
 ]
 
 [package.optional-dependencies]
@@ -127,6 +128,7 @@ requires-dist = [
     { name = "pyperclip", specifier = ">=1.8.2" },
     { name = "setuptools", specifier = ">=65,<81" },
     { name = "sounddevice", specifier = ">=0.4.6" },
+    { name = "webrtcvad", specifier = ">=2.0.10" },
     { name = "webrtcvad", marker = "extra == 'webrtc'", specifier = ">=2.0.10" },
 ]
 provides-extras = ["webrtc"]

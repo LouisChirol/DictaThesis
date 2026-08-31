@@ -17,9 +17,6 @@ const btnStart = document.getElementById("btn-start") as HTMLButtonElement;
 const btnStop = document.getElementById("btn-stop") as HTMLButtonElement;
 const btnInsert = document.getElementById("btn-insert") as HTMLButtonElement;
 const btnClear = document.getElementById("btn-clear") as HTMLButtonElement;
-const insertMenu = document.getElementById("insert-menu")!;
-const btnInsertMenu = document.getElementById("btn-insert-menu") as HTMLButtonElement;
-const insertMenuPanel = document.getElementById("insert-menu-panel")!;
 const copyMenu = document.getElementById("copy-menu")!;
 const btnCopyMenu = document.getElementById("btn-copy-menu") as HTMLButtonElement;
 const copyMenuPanel = document.getElementById("copy-menu-panel")!;
@@ -120,21 +117,6 @@ function resetDropdownPanel(panel: HTMLElement): void {
   panel.style.visibility = "";
 }
 
-function setInsertMenuOpen(open: boolean): void {
-  if (open) {
-    positionDropdownPanel(insertMenuPanel, btnInsertMenu);
-    btnInsertMenu.setAttribute("aria-expanded", "true");
-  } else {
-    insertMenuPanel.hidden = true;
-    resetDropdownPanel(insertMenuPanel);
-    btnInsertMenu.setAttribute("aria-expanded", "false");
-  }
-}
-
-function closeInsertMenu(): void {
-  setInsertMenuOpen(false);
-}
-
 function setCopyMenuOpen(open: boolean): void {
   if (open) {
     positionDropdownPanel(copyMenuPanel, btnCopyMenu);
@@ -151,9 +133,6 @@ function closeCopyMenu(): void {
 }
 
 function repositionOpenMenus(): void {
-  if (!insertMenuPanel.hidden) {
-    positionDropdownPanel(insertMenuPanel, btnInsertMenu);
-  }
   if (!copyMenuPanel.hidden) {
     positionDropdownPanel(copyMenuPanel, btnCopyMenu);
   }
@@ -161,36 +140,14 @@ function repositionOpenMenus(): void {
 
 window.addEventListener("resize", repositionOpenMenus);
 
-btnInsertMenu.addEventListener("click", (e) => {
-  e.stopPropagation();
-  closeCopyMenu();
-  if (insertMenuPanel.hidden) {
-    btnInsertMenu.scrollIntoView({ block: "nearest" });
-    setInsertMenuOpen(true);
-  } else {
-    closeInsertMenu();
-  }
-});
-
 btnCopyMenu.addEventListener("click", (e) => {
   e.stopPropagation();
-  closeInsertMenu();
   if (copyMenuPanel.hidden) {
     btnCopyMenu.scrollIntoView({ block: "nearest" });
     setCopyMenuOpen(true);
   } else {
     closeCopyMenu();
   }
-});
-
-insertMenuPanel.querySelectorAll<HTMLButtonElement>(".insert-menu-item").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const text = btn.dataset.insert ?? "";
-    if (text) {
-      window.dictaThesis.injectLiteral(text);
-    }
-    closeInsertMenu();
-  });
 });
 
 copyMenuPanel.querySelectorAll<HTMLButtonElement>(".copy-menu-item").forEach((btn) => {
@@ -219,9 +176,6 @@ copyMenuPanel.querySelectorAll<HTMLButtonElement>(".copy-menu-item").forEach((bt
 });
 
 document.addEventListener("click", (e) => {
-  if (!insertMenu.contains(e.target as Node)) {
-    closeInsertMenu();
-  }
   if (!copyMenu.contains(e.target as Node)) {
     closeCopyMenu();
   }
@@ -508,10 +462,16 @@ window.dictaThesis.onSettings((data) => {
   window.i18n.setLocale(data.data.language);
   applyUiTheme(data.data.ui_theme);
   refreshHudLabels();
+  updateInsertButton();
 });
 
 window.i18n.onLocaleChange(() => refreshHudLabels());
 
 window.dictaThesis.getSettings();
-window.dictaThesis.isPinned().then(setPinButtonState).catch(() => setPinButtonState(true));
+setPinButtonState(true);
+window.dictaThesis
+  .ensurePinned()
+  .then(setPinButtonState)
+  .catch(() => setPinButtonState(true));
 refreshHudLabels();
+updateInsertButton();

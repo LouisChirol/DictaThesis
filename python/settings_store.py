@@ -173,9 +173,9 @@ DEFAULTS = {
     "language": "fr",  # "fr" | "en" | "auto"
     "mode": "normal",  # "normal" | "equation"
     "shortcut_key": "f9",
-    "vad_silence_duration": 1.5,  # seconds of silence before chunk emitted
+    "vad_silence_duration": 0.5,  # seconds of silence before chunk emitted
     "max_chunk_duration": 6.0,  # hard cut for very long utterances
-    "vad_backend": "silero",  # "energy" | "webrtc" | "silero"
+    "vad_backend": "webrtc",  # "energy" | "webrtc" | "silero"
     "vad_mode": 2,  # webrtcvad aggressiveness: 0–3
     "enable_injection": True,  # when false, keep text in HUD without pasting
     "vocabulary": [],  # list of custom terms (strings)
@@ -183,7 +183,7 @@ DEFAULTS = {
     "hud_geometry": "480x240+60+60",
     "hud_opacity": 0.92,
     "inject_delay": 0.08,  # seconds to wait after clipboard write before paste
-    "ui_theme": "mocha",  # "mocha" | "parchment"
+    "ui_theme": "parchment",  # "mocha" | "parchment"
     "dictation_commands": DEFAULT_DICTATION_COMMANDS,
     "commands_version": COMMANDS_VERSION,
 }

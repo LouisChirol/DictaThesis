@@ -5,7 +5,7 @@ export const fr = {
   "hud.insert": "Insérer",
   "hud.insert.title.on": "Coller dans l'app active (activé)",
   "hud.insert.title.off": "Mode curseur — pas de collage",
-  "hud.symbols": "Symboles ▾",
+
   "hud.clear": "Effacer",
   "hud.clear.confirm": "Confirmer",
   "hud.copy": "Copier ▾",

@@ -103,7 +103,9 @@ You receive a raw speech-to-text draft and produce refined, ready-to-paste acade
 2. Add appropriate French or English academic punctuation: periods, commas, colons, semicolons, \
 question and exclamation marks, with correct spacing.
 3. Fix transcription errors using the vocabulary and bibliography context.
-4. Capitalize sentence starts. Maintain a formal thesis register.
+4. Capitalize only at true sentence starts. If the document tail does not end with \
+. ! ? or a newline, this chunk is a CONTINUATION: start lowercase, do not add a \
+period before the chunk, do not capitalize the first word unless it is a name or acronym.
 5. Detect voice commands (distinctive phrases below) and separate them from dictated prose.
 
 ## Smart punctuation and paired marks
@@ -136,7 +138,8 @@ utterance is purely a command.
 - `segments`: breakdown of text vs commands.
 - `detected_language`: "fr" or "en".
 - **Continuity**: output is appended after the document tail in context. \
-Do NOT repeat the tail. Match spacing and punctuation continuity.
+Do NOT repeat the tail. Match spacing and punctuation continuity. \
+If the tail is mid-sentence, `full_text` must read as the rest of that sentence.
 
 {context}
 """
@@ -195,9 +198,17 @@ def build_prompt(
     context_parts: list[str] = []
 
     if injected_tail:
+        mid = _is_mid_sentence(injected_tail)
+        join_rule = (
+            "The tail is MID-SENTENCE. Start `full_text` in lowercase, with no leading "
+            "period, and do not treat this chunk as a new sentence unless the draft "
+            "clearly begins a new one."
+            if mid
+            else "The tail ended a sentence. You may start `full_text` with a capital."
+        )
         context_parts.append(
-            f"### Tail of text already in document (continue seamlessly, do NOT repeat):\n"
-            f"...{injected_tail}"
+            "### Tail of text already in document (continue seamlessly, do NOT repeat):\n"
+            f"...{injected_tail}\n{join_rule}"
         )
 
     if open_delimiters:
@@ -291,6 +302,13 @@ def build_polish_prompt(
         else f"### Passage to rewrite:\n{paragraph}"
     )
     return SYSTEM_PROMPT_POLISH, user
+
+
+def _is_mid_sentence(tail: str) -> bool:
+    t = tail.rstrip()
+    if not t:
+        return False
+    return t[-1] not in ".!?\n"
 
 
 def apply_commands(

@@ -174,7 +174,7 @@ class AudioCapture:
         loop: asyncio.AbstractEventLoop,
         vad_silence_duration: float = 1.5,
         max_chunk_duration: float = 12.0,
-        vad_backend: str = "energy",
+        vad_backend: str = "webrtc",
         vad_mode: int = 2,
         rms_threshold: int = 400,
     ):
@@ -188,7 +188,7 @@ class AudioCapture:
         self._energy_speech_like_frames = 0
 
         # Choose VAD backend
-        backend = (vad_backend or "energy").lower()
+        backend = (vad_backend or "webrtc").lower()
         if backend == "silero":
             try:
                 self._vad = _SileroVAD()

@@ -62,13 +62,13 @@ export interface DictaThesisAPI {
   quit: () => void;
   saveSettings: (data: Partial<SettingsData>) => void;
   getSettings: () => void;
-  injectLiteral: (text: string) => void;
   clearSession: () => void;
   loadBibFile: () => Promise<string | null>;
 
   startDrag: (x: number, y: number) => void;
   dragging: (x: number, y: number) => void;
   togglePin: () => Promise<boolean>;
+  ensurePinned: () => Promise<boolean>;
   isPinned: () => Promise<boolean>;
   copyText: (text: string) => Promise<boolean>;
 

@@ -48,14 +48,6 @@ export function setupIpcHandlers(
     sidecar.send({ cmd: "get_settings" });
   });
 
-  ipcMain.on("cmd:inject_literal", (_e, text: string) => {
-    sidecar.send({ cmd: "inject_literal", text });
-  });
-
-  ipcMain.on("cmd:inject_literal", (_e, text: string) => {
-    sidecar.send({ cmd: "inject_literal", text });
-  });
-
   ipcMain.on("cmd:clear_session", () => {
     sidecar.send({ cmd: "clear_session" });
   });
@@ -92,6 +84,11 @@ export function setupIpcHandlers(
     const pinned = !hudWindow.isAlwaysOnTop();
     hudWindow.setAlwaysOnTop(pinned, "floating");
     return pinned;
+  });
+
+  ipcMain.handle("window:ensure-pinned", () => {
+    hudWindow.setAlwaysOnTop(true, "floating");
+    return hudWindow.isAlwaysOnTop();
   });
 
   ipcMain.handle("window:is-pinned", () => hudWindow.isAlwaysOnTop());

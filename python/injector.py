@@ -18,20 +18,24 @@ from platform_utils import IS_MACOS, USE_WIN_INJECT
 _lock = threading.Lock()  # prevent concurrent injections corrupting clipboard
 
 
-def inject_text(text: str, delay: float = 0.08):
+def inject_text(text: str, delay: float = 0.08, restore_delay: float | None = None):
     """
     Inject text at the cursor position of the currently focused app.
-    Temporarily overwrites the clipboard, then restores it.
+    Temporarily overwrites the clipboard, then restores it after the host
+    app has had time to consume the paste (Writer/Word are slower than 50ms).
     """
     if not text:
         return
 
+    if restore_delay is None:
+        restore_delay = max(0.25, min(0.9, 0.2 + len(text) / 4000))
+
     with _lock:
         try:
             if USE_WIN_INJECT:
-                _inject_windows(text, delay)
+                _inject_windows(text, delay, restore_delay)
             else:
-                _inject_native(text, delay)
+                _inject_native(text, delay, restore_delay)
         except Exception as e:
             print(f"[injector] Error: {e}")
 
@@ -55,26 +59,21 @@ def _ps_command(script: str, **kwargs) -> subprocess.CompletedProcess:
     )
 
 
-def _inject_windows(text: str, delay: float):
+def _inject_windows(text: str, delay: float, restore_delay: float):
     """Use powershell Set-Clipboard + SendKeys for Windows-native paste."""
-    # Save current Windows clipboard
     saved = _win_clipboard_read()
 
-    # Write to Windows clipboard via powershell (proper Unicode support)
-    # Escape single quotes for powershell string
     escaped = text.replace("'", "''")
     _ps_command(f"Set-Clipboard -Value '{escaped}'", check=True)
     time.sleep(delay)
 
-    # Simulate Ctrl+V via powershell SendKeys
     _ps_command(
         "Add-Type -AssemblyName System.Windows.Forms; "
         "[System.Windows.Forms.SendKeys]::SendWait('^v')",
         check=True,
     )
-    time.sleep(0.05)
+    time.sleep(restore_delay)
 
-    # Restore clipboard
     if saved is not None:
         _win_clipboard_write(saved)
 
@@ -109,7 +108,7 @@ def _win_clipboard_write(text: str):
 # ---------------------------------------------------------------------------
 
 
-def _inject_native(text: str, delay: float):
+def _inject_native(text: str, delay: float, restore_delay: float):
     """Use pyperclip + pynput for native clipboard/keyboard injection."""
     import pyperclip
     from pynput.keyboard import Controller, Key
@@ -121,12 +120,11 @@ def _inject_native(text: str, delay: float):
     pyperclip.copy(text)
     time.sleep(delay)
 
-    # Simulate Ctrl+V / Cmd+V
     kb.press(paste_mod)
     kb.press("v")
     kb.release("v")
     kb.release(paste_mod)
-    time.sleep(0.05)
+    time.sleep(restore_delay)
 
     if saved is not None:
         pyperclip.copy(saved)

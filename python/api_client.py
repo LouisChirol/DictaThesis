@@ -1,7 +1,8 @@
 """
 Async Mistral API client.
   - 1st pass: POST /v1/audio/transcriptions  (Voxtral Mini Transcribe 2)
-  - 2nd pass: POST /v1/chat/completions      (Mistral Medium, JSON output)
+  - 2nd pass: POST /v1/chat/completions      (Mistral Small, JSON output)
+  - Cool path: paragraph polish              (Mistral Medium)
 """
 
 from __future__ import annotations
@@ -11,11 +12,12 @@ import json
 
 import httpx
 
-from prompt import build_prompt, build_response_schema
+from prompt import POLISH_RESPONSE_SCHEMA, build_polish_prompt, build_prompt, build_response_schema
 
 BASE_URL = "https://api.mistral.ai/v1"
 TRANSCRIPTION_MODEL = "voxtral-mini-latest"
-REFINEMENT_MODEL = "mistral-medium-latest"
+REFINEMENT_MODEL = "mistral-small-latest"
+POLISH_MODEL = "mistral-medium-latest"
 TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 MAX_CONTEXT_BIAS_TERMS = 100
 
@@ -40,7 +42,7 @@ async def transcribe(
     Uses context_bias from vocabulary (up to 100 terms). Document tail is not
     sent to STT — continuity is handled in pass 2 via injected_tail.
     """
-    del injected_tail  # STT endpoint has no tail prompt; Large uses it in pass 2
+    del injected_tail  # STT endpoint has no tail prompt; pass 2 uses it
 
     multipart: list[tuple[str, tuple[str | None, str | io.BytesIO, str | None]]] = [
         ("file", ("audio.wav", io.BytesIO(wav_bytes), "audio/wav")),
@@ -80,7 +82,7 @@ async def refine(
     open_delimiters: list[str] | None = None,
 ) -> dict:
     """
-    Pass 2: thesis-style refinement, smart punctuation, and command detection.
+    Pass 2: thesis-style refinement, smart punctuation, and command detection (Small).
     """
     system_prompt, user_message = build_prompt(
         draft_text,
@@ -134,6 +136,60 @@ async def refine(
             return parsed
         except (json.JSONDecodeError, KeyError):
             return _fallback(draft_text)
+
+
+async def polish_paragraph(
+    paragraph: str,
+    api_key: str,
+    settings,
+    preceding_tail: str = "",
+) -> dict | None:
+    """
+    Cool path: rewrite one owned paragraph with Medium.
+    Returns parsed JSON {rewritten, changed} or None on failure.
+    """
+    system_prompt, user_message = build_polish_prompt(
+        paragraph, settings, preceding_tail=preceding_tail
+    )
+    payload = {
+        "model": POLISH_MODEL,
+        "temperature": 0.2,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "DictaThesisPolish",
+                "strict": True,
+                "schema": POLISH_RESPONSE_SCHEMA,
+            },
+        },
+    }
+
+    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        resp = await client.post(
+            f"{BASE_URL}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        if resp.status_code != 200:
+            print(f"[api_client] Polish error {resp.status_code}: {resp.text[:200]}")
+            return None
+
+        body = resp.json()
+        raw_content = body["choices"][0]["message"]["content"]
+        try:
+            parsed = json.loads(raw_content)
+            if "rewritten" not in parsed:
+                return None
+            return parsed
+        except (json.JSONDecodeError, KeyError):
+            return None
 
 
 def _fallback(draft_text: str) -> dict:

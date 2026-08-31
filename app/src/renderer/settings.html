@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="mocha">
+<html lang="fr" data-theme="parchment">
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
@@ -50,8 +50,8 @@
       <div class="field">
         <label data-i18n="settings.vadSilence.help">Seconds of silence before a chunk is emitted</label>
         <div class="slider-wrapper">
-          <input type="range" id="vad-silence" min="0.5" max="4.0" step="0.1" value="1.5" />
-          <span class="slider-value" id="vad-silence-value">1.5s</span>
+          <input type="range" id="vad-silence" min="0.5" max="4.0" step="0.1" value="0.5" />
+          <span class="slider-value" id="vad-silence-value">0.5s</span>
         </div>
       </div>
     </div>
@@ -62,8 +62,8 @@
       <div class="field">
         <label data-i18n="settings.maxChunk.help">Hard chunk cut even without silence (helps long monologues stream continuously)</label>
         <div class="slider-wrapper">
-          <input type="range" id="max-chunk-duration" min="3.0" max="30.0" step="0.5" value="12.0" />
-          <span class="slider-value" id="max-chunk-duration-value">12.0s</span>
+          <input type="range" id="max-chunk-duration" min="3.0" max="30.0" step="0.5" value="6.0" />
+          <span class="slider-value" id="max-chunk-duration-value">6.0s</span>
         </div>
       </div>
     </div>
@@ -75,7 +75,7 @@
         <label for="vad-backend" data-i18n="settings.vadBackend.help">Detection engine used to split speech and silence</label>
         <select id="vad-backend">
           <option value="energy" data-i18n-label="settings.vad.energy">Energy (fast, no extra dependency)</option>
-          <option value="webrtc" data-i18n-label="settings.vad.webrtc">WebRTC VAD</option>
+          <option value="webrtc" selected data-i18n-label="settings.vad.webrtc">WebRTC VAD</option>
           <option value="silero" data-i18n-label="settings.vad.silero">Silero ONNX VAD</option>
         </select>
       </div>
@@ -87,8 +87,8 @@
       <div class="field">
         <label data-i18n="settings.appearance.help">Color theme (HUD + settings)</label>
         <div class="radio-group">
-          <label><input type="radio" name="ui-theme" value="mocha" checked /> <span data-i18n="settings.theme.mocha">Mocha — dark IDE style</span></label>
-          <label><input type="radio" name="ui-theme" value="parchment" /> <span data-i18n="settings.theme.parchment">Parchment — warm paper &amp; ink</span></label>
+          <label><input type="radio" name="ui-theme" value="mocha" /> <span data-i18n="settings.theme.mocha">Mocha — dark IDE style</span></label>
+          <label><input type="radio" name="ui-theme" value="parchment" checked /> <span data-i18n="settings.theme.parchment">Parchment — warm paper &amp; ink</span></label>
         </div>
       </div>
     </div>

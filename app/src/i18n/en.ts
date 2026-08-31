@@ -5,7 +5,7 @@ export const en = {
   "hud.insert": "Insert",
   "hud.insert.title.on": "Paste into focused app (on)",
   "hud.insert.title.off": "Cursor mode — not pasting",
-  "hud.symbols": "Symbols ▾",
+
   "hud.clear": "Clear",
   "hud.clear.confirm": "Confirm",
   "hud.copy": "Copy ▾",

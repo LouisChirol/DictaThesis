@@ -34,7 +34,6 @@ contextBridge.exposeInMainWorld("dictaThesis", {
   saveSettings: (data: Record<string, unknown>) =>
     ipcRenderer.send("cmd:update_settings", data),
   getSettings: () => ipcRenderer.send("cmd:get_settings"),
-  injectLiteral: (text: string) => ipcRenderer.send("cmd:inject_literal", text),
   clearSession: () => ipcRenderer.send("cmd:clear_session"),
   loadBibFile: () => ipcRenderer.invoke("ui:load_bib_file"),
 
@@ -42,6 +41,7 @@ contextBridge.exposeInMainWorld("dictaThesis", {
   startDrag: (x: number, y: number) => ipcRenderer.send("window:start-drag", x, y),
   dragging: (x: number, y: number) => ipcRenderer.send("window:dragging", x, y),
   togglePin: () => ipcRenderer.invoke("window:toggle-pin"),
+  ensurePinned: () => ipcRenderer.invoke("window:ensure-pinned"),
   isPinned: () => ipcRenderer.invoke("window:is-pinned"),
   copyText: (text: string) => ipcRenderer.invoke("clipboard:copy-text", text),
 

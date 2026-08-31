@@ -11,9 +11,11 @@ Works in **any** application: Google Docs, Word, Overleaf, TeXStudio, email, VSC
 1. Press **F9** (configurable) to start dictation
 2. Speak your paper naturally — punctuation is inferred, not dictated word-by-word
 3. **1st pass**: Voxtral Mini Transcribe 2 transcribes each chunk (vocabulary via `context_bias`)
-4. **2nd pass**: Mistral Medium refines into thesis register, adds smart punctuation, and handles voice commands
-5. The refined text is injected into whatever app is focused
+4. **Hot path**: Mistral Small refines into thesis register, adds smart punctuation, and handles voice commands; text is injected at the cursor
+5. **Cool path**: after a pause, on Stop, or about every 30s, Mistral Medium may rewrite a **trailing passage** we injected (about 800 characters, not the whole document), by selecting backwards from the caret. This only runs if we still own that suffix. Clicking away flushes that window.
 6. Press **F9** again (or click Stop in the HUD) to end
+
+While dictating, keep the caret at the end of the injected text. Switching windows or clicking elsewhere in the document disables the rewrite until you dictate again.
 
 Speak full sentences. You do **not** need to say "point" or "virgule" — the system adds French/English academic punctuation. Use distinctive phrases only for structure and editing (see below).
 
@@ -37,7 +39,7 @@ Speak full sentences. You do **not** need to say "point" or "virgule" — the sy
 | "début équation" / "start equation" | `$` |
 | "arrêter la dictée" / "stop dictation" | end session |
 
-The HUD also has one-click chips for `( )` and `« »` when you prefer not to speak delimiters.
+Speak delimiters when you need them (`ouvrir parenthèse`, `ouvrir guillemet`, …). Clicking the HUD would steal the caret, so there is no symbol palette.
 
 ---
 
@@ -99,6 +101,8 @@ Or edit directly: `~/.config/dictathesis/config.json` (Linux/macOS) or `%APPDATA
 | **Vocabulary** | Custom terms — `context_bias` for STT + refinement in Medium |
 | **Bibliography** | BibTeX for `\cite{}` commands |
 
+Fresh install (no `config.json` yet): language **fr**, VAD **webrtc**, silence **0.5 s**, max chunk **6 s**, theme **parchment**, HUD pinned and paste-on, empty API key / vocabulary / bibliography.
+
 ---
 
 ## Architecture
@@ -107,14 +111,14 @@ Or edit directly: `~/.config/dictathesis/config.json` (Linux/macOS) or `%APPDATA
 DictaThesis/
   python/                    # Python backend (sidecar process)
     sidecar.py               — headless IPC bridge (stdin/stdout JSONL)
-    pipeline.py              — two-pass state machine (Voxtral Mini → Medium)
+    pipeline.py              — Voxtral Mini → Small emit; Medium last-paragraph polish
     audio.py                 — sounddevice capture + VAD chunking
     api_client.py            — async Mistral API calls (httpx)
     injector.py              — clipboard + Ctrl/Cmd+V text injection
-    prompt.py                — STT + refinement prompt assembly
+    prompt.py                — STT + refinement + polish prompt assembly
     settings_store.py        — JSON config
-    context_reader.py        — focused-field context at session start
-    text_editor.py           — backspace-based editing commands
+    context_reader.py        — focused-field text + foreground window (caret guard)
+    text_editor.py           — backspace-based editing and in-place paragraph replace
 
   app/                       # Electron frontend
     src/main/
@@ -139,7 +143,8 @@ DictaThesis/
 | Audio capture | `sounddevice` (PortAudio) |
 | Voice activity | Silero / WebRTC / energy VAD |
 | 1st pass STT | Voxtral Mini Transcribe 2 |
-| 2nd pass LLM | Mistral Medium |
+| 2nd pass LLM | Mistral Small |
+| Paragraph polish | Mistral Medium (owned suffix only) |
 | Text injection | `pyperclip` + `pynput` |
 | Global hotkey | Electron `globalShortcut` |
 

@@ -103,7 +103,9 @@ You receive a raw speech-to-text draft and produce refined, ready-to-paste acade
 2. Add appropriate French or English academic punctuation: periods, commas, colons, semicolons, \
 question and exclamation marks, with correct spacing.
 3. Fix transcription errors using the vocabulary and bibliography context.
-4. Capitalize sentence starts. Maintain a formal thesis register.
+4. Capitalize only at true sentence starts. If the document tail does not end with \
+. ! ? or a newline, this chunk is a CONTINUATION: start lowercase, do not add a \
+period before the chunk, do not capitalize the first word unless it is a name or acronym.
 5. Detect voice commands (distinctive phrases below) and separate them from dictated prose.
 
 ## Smart punctuation and paired marks
@@ -136,7 +138,8 @@ utterance is purely a command.
 - `segments`: breakdown of text vs commands.
 - `detected_language`: "fr" or "en".
 - **Continuity**: output is appended after the document tail in context. \
-Do NOT repeat the tail. Match spacing and punctuation continuity.
+Do NOT repeat the tail. Match spacing and punctuation continuity. \
+If the tail is mid-sentence, `full_text` must read as the rest of that sentence.
 
 {context}
 """
@@ -195,9 +198,17 @@ def build_prompt(
     context_parts: list[str] = []
 
     if injected_tail:
+        mid = _is_mid_sentence(injected_tail)
+        join_rule = (
+            "The tail is MID-SENTENCE. Start `full_text` in lowercase, with no leading "
+            "period, and do not treat this chunk as a new sentence unless the draft "
+            "clearly begins a new one."
+            if mid
+            else "The tail ended a sentence. You may start `full_text` with a capital."
+        )
         context_parts.append(
-            f"### Tail of text already in document (continue seamlessly, do NOT repeat):\n"
-            f"...{injected_tail}"
+            "### Tail of text already in document (continue seamlessly, do NOT repeat):\n"
+            f"...{injected_tail}\n{join_rule}"
         )
 
     if open_delimiters:
@@ -236,8 +247,68 @@ def build_prompt(
 
 
 # ---------------------------------------------------------------------------
-# Command → text application (fallback when full_text is missing)
+# Cool path — Mistral Medium paragraph polish (owned suffix only)
 # ---------------------------------------------------------------------------
+
+SYSTEM_PROMPT_POLISH = """\
+You rewrite a trailing academic passage that was produced by live dictation (speech-to-text \
+then a fast cleanup pass). Fix grammar, duplicated clauses, and punctuation that was \
+guessed at chunk boundaries. Keep the author's meaning, language, and technical terms.
+
+## Rules
+- Return JSON only, matching the schema.
+- `rewritten` is the full passage to paste in place of the original (no quotes around it).
+- Do not add new claims, citations, or headings.
+- Do not drop technical terms from the vocabulary.
+- If the passage is already correct, set `changed` to false and copy the original into `rewritten`.
+- Preserve markdown already present (e.g. leading `## `).
+- Never output instructions, English meta-commentary, or text that was not in the passage.
+"""
+
+POLISH_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "rewritten": {"type": "string"},
+        "changed": {"type": "boolean"},
+    },
+    "required": ["rewritten", "changed"],
+}
+
+
+def build_polish_prompt(
+    paragraph: str,
+    settings,
+    preceding_tail: str = "",
+) -> tuple[str, str]:
+    """Build (system_prompt, user_message) for the Medium paragraph rewrite."""
+    context_parts: list[str] = []
+    if preceding_tail:
+        context_parts.append(
+            "### Text immediately before this passage (do not repeat):\n"
+            f"...{preceding_tail}"
+        )
+    vocabulary = settings.get("vocabulary")
+    if vocabulary:
+        terms = ", ".join(vocabulary)
+        context_parts.append(
+            f"### Technical vocabulary — keep these exact spellings:\n{terms}"
+        )
+    lang = settings.get("language")
+    context_parts.append(f"### Expected language: {lang}")
+    extra = "\n\n".join(context_parts)
+    user = (
+        f"{extra}\n\n### Passage to rewrite:\n{paragraph}"
+        if extra
+        else f"### Passage to rewrite:\n{paragraph}"
+    )
+    return SYSTEM_PROMPT_POLISH, user
+
+
+def _is_mid_sentence(tail: str) -> bool:
+    t = tail.rstrip()
+    if not t:
+        return False
+    return t[-1] not in ".!?\n"
 
 
 def apply_commands(

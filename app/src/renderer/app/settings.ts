@@ -65,8 +65,8 @@ btnSave.addEventListener("click", () => {
     shortcut_key: shortcutInput.value.toLowerCase().trim() || "f9",
     vad_silence_duration: parseFloat(vadSlider.value),
     max_chunk_duration: parseFloat(maxChunkSlider.value),
-    vad_backend: vadBackendSelect.value || "energy",
-    ui_theme: themeRadio?.value || "mocha",
+    vad_backend: vadBackendSelect.value || "webrtc",
+    ui_theme: themeRadio?.value || "parchment",
     vocabulary: vocabularyArea.value
       .split("\n")
       .map((s) => s.trim())
@@ -103,14 +103,14 @@ window.dictaThesis.onSettings((data) => {
 
   shortcutInput.value = s.shortcut_key || "f9";
 
-  vadSlider.value = String(s.vad_silence_duration ?? 1.5);
+  vadSlider.value = String(s.vad_silence_duration ?? 0.5);
   vadValue.textContent = `${vadSlider.value}s`;
-  maxChunkSlider.value = String(s.max_chunk_duration ?? 12.0);
+  maxChunkSlider.value = String(s.max_chunk_duration ?? 6.0);
   maxChunkValue.textContent = `${maxChunkSlider.value}s`;
-  vadBackendSelect.value = s.vad_backend || "energy";
+  vadBackendSelect.value = s.vad_backend || "webrtc";
 
   const themeRadio = document.querySelector(
-    `input[name="ui-theme"][value="${s.ui_theme || "mocha"}"]`
+    `input[name="ui-theme"][value="${s.ui_theme || "parchment"}"]`
   ) as HTMLInputElement | null;
   if (themeRadio) themeRadio.checked = true;
   applyUiTheme(s.ui_theme);
